@@ -27,3 +27,6 @@ venv/
 # Secrets / env
 .env
 *.env
+webapp/.secret_key
+webapp/users.db
+webapp/activity_log.jsonl
