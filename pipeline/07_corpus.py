@@ -111,11 +111,12 @@ def assemble_corpus(daily_dir: Path, out_dir: Path,
 
 
 def main():
+    _here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(
         description="Assemble Hansard corpus from daily parquet files."
     )
-    parser.add_argument("--daily-dir", default="../data/output/senate/daily")
-    parser.add_argument("--out-dir",   default="../data/output/senate/corpus")
+    parser.add_argument("--daily-dir", default=str(_here / "../data/output/senate/daily"))
+    parser.add_argument("--out-dir",   default=str(_here / "../data/output/senate/corpus"))
     parser.add_argument("--prefix",    default="senate_hansard_corpus")
     args = parser.parse_args()
     assemble_corpus(Path(args.daily_dir), Path(args.out_dir), prefix=args.prefix)

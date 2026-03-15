@@ -663,12 +663,13 @@ def fill_all(daily_dir: Path, lookup_dir: Path, out_dir: Path,
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main():
+    _here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(
         description="Fill member details in parsed House Hansard daily files."
     )
-    parser.add_argument("--daily-dir",  default="../data/output/house/daily_raw")
-    parser.add_argument("--lookup-dir", default="../data/lookup")
-    parser.add_argument("--out-dir",    default="../data/output/house/daily")
+    parser.add_argument("--daily-dir",  default=str(_here / "../data/output/house/daily_raw"))
+    parser.add_argument("--lookup-dir", default=str(_here / "../data/lookup"))
+    parser.add_argument("--out-dir",    default=str(_here / "../data/output/house/daily"))
     parser.add_argument("--no-skip",    action="store_true",
                         help="Re-process files that already have output")
     parser.add_argument("--sequential", action="store_true",
