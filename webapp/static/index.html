@@ -670,9 +670,11 @@
     }
     .ctx-speech-meta {
       font-size: 0.77rem; color: var(--tn-fg-dim); margin-bottom: 3px;
+      display: flex; align-items: baseline; gap: 7px;
     }
+    .ctx-speech-meta .turn-time { margin-left: auto; flex-shrink: 0; }
     .ctx-speech-body { color: var(--tn-fg); line-height: 1.45; }
-    .turn-time   { font-size: 0.72rem; color: var(--tn-comment); margin-right: 6px; }
+    .turn-time   { font-size: 0.72rem; color: var(--tn-comment); }
     .time-est    { opacity: 0.65; font-style: italic; }
   </style>
 </head>
@@ -2370,7 +2372,6 @@ function selectResult(matchId, date, chamber) {
     const chamberBadge = res.chamber === 'senate'
       ? `<span class="badge badge-senate bg-primary">Senate</span>`
       : `<span class="badge badge-house bg-success">House</span>`;
-    const typeBadges = buildTypeBadges(res);
     const termBadgesHtml = (res.matched_terms && res.matched_terms.length)
       ? res.matched_terms.map(t => `<span class="badge bg-warning text-dark">${esc(t)}</span>`).join(' ')
       : '';
@@ -2380,7 +2381,6 @@ function selectResult(matchId, date, chamber) {
           ${chamberBadge}
           <strong class="ms-1">${esc(_fixName(res.name, res.gender))}</strong>
           <span class="text-muted ms-1">· ${_partyBadge(res.party)} · ${esc(res.state_or_electorate)}</span>
-          ${typeBadges !== '<span class="text-muted small">—</span>' ? `<span class="ms-1">${typeBadges}</span>` : ''}
         </div>
         <div class="d-flex align-items-center gap-3">
           <a href="${_hansardUrl(res.date, res.chamber)}" target="_blank" rel="noopener"
@@ -2561,7 +2561,6 @@ function renderTableBody() {
       ? `<span class="badge badge-senate bg-primary">Senate</span>`
       : `<span class="badge badge-house bg-success">House</span>`;
 
-    const typeBadges = buildTypeBadges(res);
     const dateStr = formatDate(res.date);
 
     const card = document.createElement("div");
@@ -2578,9 +2577,7 @@ function renderTableBody() {
       </div>
       <div class="result-card-meta">
         ${_partyBadge(res.party)}
-        <span class="meta-sep">·</span>
         <span>${esc(res.state_or_electorate)}</span>
-        ${typeBadges !== '<span class="text-muted small">—</span>' ? `<span class="meta-sep">·</span>${typeBadges}` : ''}
       </div>
       <p class="preview-text" style="font-size:0.74rem;color:var(--tn-fg-dim);margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4">${esc(res.body_preview)}</p>`;
 
@@ -3487,8 +3484,10 @@ function _renderContextWindow(scroll = true) {
       : '';
     div.innerHTML = `
       <div class="ctx-speech-meta">
-        ${tsHtml}<strong>${esc(_fixName(sp.name, sp.gender))}</strong>
-        <span style="opacity:0.7"> · ${_partyBadge(sp.party)} · ${esc(sp.state_or_electorate)}${typeFlags ? " · " + typeFlags : ""}</span>
+        <strong>${esc(_fixName(sp.name, sp.gender))}</strong>
+        <span style="opacity:0.7">${_partyBadge(sp.party)}</span>
+        <span style="opacity:0.7">${esc(sp.state_or_electorate)}</span>
+        ${tsHtml}
       </div>
       <div class="ctx-speech-body">${highlightTerms(sp.body, terms)}</div>`;
     bodyEl.appendChild(div);
