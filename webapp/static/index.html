@@ -2574,12 +2574,14 @@ function renderTableBody() {
           ${chamberBadge}
           <span class="speaker-name">${esc(_fixName(res.name, res.gender))}</span>
         </div>
-        <span class="result-date">${esc(dateStr)}</span>
+        <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+          ${buildTypeBadges(res)}
+          <span class="result-date">${esc(dateStr)}</span>
+        </div>
       </div>
       <div class="result-card-meta">
         ${_partyBadge(res.party)}
         <span>${esc(res.state_or_electorate)}</span>
-        ${buildTypeBadges(res)}
       </div>
       <p class="preview-text" style="font-size:0.74rem;color:var(--tn-fg-dim);margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4">${esc(res.body_preview)}</p>`;
 
