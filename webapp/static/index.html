@@ -375,17 +375,10 @@
     }
     .alias-group-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 
-    /* ── Combined expression ──────────────────────────────────────────────── */
+    /* ── Combined expression (selected alias chips) ───────────────────────── */
     #expr-combined {
-      font-size: 0.75rem; font-family: monospace; user-select: none;
-      background: var(--tn-bg-hi); border-top: 1px solid var(--tn-bg-hi2);
-      padding: 4px 12px; color: var(--tn-comment);
-      display: flex; flex-direction: column; gap: 1px;
+      display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
     }
-    .combined-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px; }
-    .combined-term { color: var(--tn-fg-dim); margin-right: 2px; }
-    .combined-or   { color: var(--tn-comment); }
-    .combined-alias { color: var(--tn-teal); }
 
 
     /* ── Scrollbars ───────────────────────────────────────────────────────── */
@@ -520,7 +513,7 @@
 
     #search-pin-group {
       display: none; flex: 1; min-width: 0; max-width: 560px;
-      align-items: center; gap: 6px;
+      flex-direction: column; gap: 4px;
     }
     body.searched #search-pin-group { display: flex; }
     body.searched #corpus-range-label { display: none !important; }
@@ -532,6 +525,9 @@
     #search-pin .search-wrap { width: 100%; }
     #search-pin .search-wrap #expr-input {
       font-size: 0.85rem; padding-top: 5px; padding-bottom: 5px;
+    }
+    #search-controls {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     }
     @media (max-width: 960px) {
       body.searched #search-pin-group { flex: 1 1 100%; max-width: none; order: 100; padding: 5px 0 4px; border-top: 1px solid var(--tn-bg-hi2); margin-top: -14px; }
@@ -678,22 +674,23 @@
   <span id="corpus-range-label" class="small text-secondary" style="opacity:0.65">Australian Federal Parliament · House &amp; Senate · 1998–2026</span>
   <span id="header-stats" class="small text-secondary"></span>
   <div id="search-pin-group">
-    <div id="search-pin">
-      <div id="search-pin-inner">
-        <div class="search-wrap">
-          <div class="search-input-row">
-            <input type="text" id="expr-input" class="form-control form-control-lg"
-              placeholder="Search…" autocomplete="off" />
-            <div class="search-inner-btns">
-              <button id="clear-btn" onclick="clearSearch()" title="Clear search">✕</button>
-              <button id="search-btn" onclick="doSearch(1)">Search</button>
+    <!-- Row 1: input + ⓘ -->
+    <div style="display:flex;align-items:center;gap:6px;width:100%">
+      <div id="search-pin">
+        <div id="search-pin-inner">
+          <div class="search-wrap">
+            <div class="search-input-row">
+              <input type="text" id="expr-input" class="form-control form-control-lg"
+                placeholder="Search…" autocomplete="off" />
+              <div class="search-inner-btns">
+                <button id="clear-btn" onclick="clearSearch()" title="Clear search">✕</button>
+                <button id="search-btn" onclick="doSearch(1)">Search</button>
+              </div>
             </div>
           </div>
-          <div id="expr-combined" class="d-none"></div>
         </div>
       </div>
-    </div>
-    <div style="position:relative; flex-shrink:0;">
+      <div style="position:relative; flex-shrink:0;">
       <button id="search-info-btn" onclick="toggleSearchInfo(event)"
         title="Search syntax help"
         style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:50%;color:var(--tn-comment);
@@ -719,6 +716,29 @@
           </code>
         </div>
       </div>
+    </div><!-- end row 1 -->
+    <!-- Row 2: selected alias chips -->
+    <div id="expr-combined" class="d-none"></div>
+    <!-- Row 3: controls -->
+    <div id="search-controls">
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" id="f-case-sensitive" />
+        <label class="form-check-label small text-muted" for="f-case-sensitive">Case sensitive</label>
+      </div>
+      <button id="alias-toggle-btn" class="d-none btn btn-sm btn-outline-secondary"
+        style="font-size:0.78rem;white-space:nowrap"
+        onclick="toggleAliases()"
+        title="Show/hide related term suggestions">
+        Related <span id="alias-badge"></span>▾
+      </button>
+    </div>
+    <!-- Row 4: alias suggestions popup -->
+    <div id="alias-container" class="d-none p-2 border rounded">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="small fw-semibold text-muted">Related — click to add to expression</span>
+        <button class="btn-close btn-sm" style="font-size:0.6rem" onclick="closeAliases()"></button>
+      </div>
+      <div id="alias-groups"></div>
     </div>
   </div>
 
@@ -734,29 +754,6 @@
 
     <!-- ① Search + chart — first in DOM (top on mobile, right-top on desktop) -->
     <div id="main-top" class="p-3">
-
-      <div class="mb-2">
-        <div class="d-flex align-items-center gap-3 mt-1">
-          <div class="form-check form-switch mb-0 flex-shrink-0">
-            <input class="form-check-input" type="checkbox" id="f-case-sensitive" />
-            <label class="form-check-label small text-muted" for="f-case-sensitive">Case sensitive</label>
-          </div>
-          <button id="alias-toggle-btn" class="d-none btn btn-sm btn-outline-secondary ms-1"
-            style="font-size:0.78rem; white-space:nowrap"
-            onclick="toggleAliases()"
-            title="Show/hide related term suggestions">
-            Related <span id="alias-badge"></span>▾
-          </button>
-        </div>
-        <!-- Related terms -->
-        <div id="alias-container" class="d-none mt-2 p-2 border rounded">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="small fw-semibold text-muted">Related — click to add to expression</span>
-            <button class="btn-close btn-sm" style="font-size:0.6rem" onclick="closeAliases()"></button>
-          </div>
-          <div id="alias-groups"></div>
-        </div>
-      </div>
 
       <!-- Chamber radio -->
       <div class="chamber-row mb-3 d-flex gap-3 align-items-center flex-wrap">
@@ -2286,20 +2283,24 @@ function buildFullExpression() {
 
 function updateCombinedExpr() {
   const el = document.getElementById("expr-combined");
-  // Collect terms that have at least one selected alias
-  const rows = [];
+  el.innerHTML = "";
   for (const [term, aliases] of _selectedAliases) {
-    if (!aliases.size) continue;
-    const aliasParts = [...aliases].map(a =>
-      `<span class="combined-or">|</span> <span class="combined-alias">'${esc(a)}'</span>`
-    ).join(" ");
-    rows.push(
-      `<div class="combined-row"><span class="combined-term">'${esc(term)}'</span> ${aliasParts}</div>`
-    );
+    for (const alias of aliases) {
+      const chip = document.createElement("button");
+      chip.className = "btn btn-sm btn-success";
+      chip.style.fontSize = "0.78rem";
+      chip.textContent = alias;
+      chip.title = `Selected alias for '${term}' — click to remove`;
+      chip.addEventListener("click", () => {
+        aliases.delete(alias);
+        updateCombinedExpr();
+        autoSearch(1000);
+      });
+      el.appendChild(chip);
+    }
   }
-  if (!rows.length) { el.classList.add("d-none"); return; }
-  el.innerHTML = rows.join("");
-  el.classList.remove("d-none");
+  const hasChips = el.children.length > 0;
+  el.classList.toggle("d-none", !hasChips);
 }
 
 // ── Mobile reading pane overlay ─────────────────────────────────────────────
