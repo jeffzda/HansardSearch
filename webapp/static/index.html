@@ -801,14 +801,6 @@
     <div id="main-top" class="p-3">
 
       <!-- Chamber radio -->
-      <div class="mb-2 d-flex align-items-center gap-1">
-        <label class="small text-muted me-1">Per page:</label>
-        <select id="page-size" class="form-select form-select-sm" style="width:80px">
-          <option value="20" selected>20</option>
-          <option value="50">50</option>
-          <option value="100">100</option>
-        </select>
-      </div>
 
       <!-- Error alert -->
       <div id="error-alert" class="alert alert-danger d-none py-2 mb-2" role="alert"></div>
@@ -1255,7 +1247,7 @@ function buildShareUrl() {
   if (expr) p.set("q", expr);
   const chamber = document.querySelector('input[name="f-chamber"]:checked')?.value || "both";
   if (chamber !== "both") p.set("chamber", chamber);
-  const ps = parseInt(document.getElementById("page-size").value) || 20;
+  const ps = 20;
   if (ps !== 20) p.set("ps", ps);
   if (document.getElementById("f-case-sensitive").checked) p.set("cs", "1");
   if (_sortCol) p.set("sc", _sortCol);
@@ -1360,8 +1352,6 @@ function restoreStateFromUrl() {
   const chamberEl = document.querySelector(`input[name="f-chamber"][value="${chamber}"]`);
   if (chamberEl) chamberEl.checked = true;
 
-  const ps = parseInt(p.get("ps"));
-  if (ps) document.getElementById("page-size").value = ps;
 
   if (p.get("cs") === "1") document.getElementById("f-case-sensitive").checked = true;
   if (p.get("sc")) _sortCol = p.get("sc");
@@ -1523,7 +1513,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
   // Per-page select: auto-trigger
-  document.getElementById("page-size").addEventListener("change", autoSearch);
 
   // Case-sensitive toggle: auto-trigger
   document.getElementById("f-case-sensitive").addEventListener("change", () => {
@@ -2435,7 +2424,7 @@ async function doSearch(page) {
   history.replaceState(null, "", _shareUrl);
 
   const chamber       = document.querySelector('input[name="f-chamber"]:checked')?.value || "both";
-  const pageSize      = parseInt(document.getElementById("page-size").value) || 20;
+  const pageSize      = 20;
   const caseSensitive = document.getElementById("f-case-sensitive").checked;
   const filters       = collectFilters();
 
@@ -2788,7 +2777,6 @@ async function downloadCSV() {
   if (!_lastSearch) { showError("Run a search first."); return; }
   const payload = { ..._lastSearch };
   delete payload.page;
-  delete payload.page_size;
   delete payload.context;
 
   const r = await fetch("/api/download", {
@@ -2881,7 +2869,6 @@ function resetAll() {
   // Reset sort and page size
   _sortCol = null; _sortDir = "desc";
   updateSortHeaders();
-  document.getElementById("page-size").value = "20";
   document.getElementById("f-case-sensitive").checked = false;
   // Clear URL
   history.replaceState(null, "", location.pathname);
