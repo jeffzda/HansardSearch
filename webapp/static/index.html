@@ -518,6 +518,23 @@
     #alias-toggle-btn.active { background: var(--tn-bg-hi2); }
     #alias-badge { font-size: 0.72rem; color: var(--tn-blue); margin-right:2px; }
 
+    #search-pin {
+      display: none; flex: 1; min-width: 0; max-width: 540px;
+    }
+    body.searched #search-pin { display: flex; align-items: center; }
+    body.searched #corpus-range-label { display: none !important; }
+    body.searched #header-stats       { display: none !important; }
+    #search-pin-inner {
+      display: flex; align-items: center; width: 100%;
+    }
+    #search-pin .search-wrap { width: 100%; }
+    #search-pin .search-wrap #expr-input {
+      font-size: 0.85rem; padding-top: 5px; padding-bottom: 5px;
+    }
+    @media (max-width: 960px) {
+      body.searched #search-pin { flex: 1 1 100%; max-width: none; order: 100; padding: 5px 0 4px; border-top: 1px solid var(--tn-bg-hi2); margin-top: -14px; }
+    }
+
     /* ── Sidebar tab + inner ──────────────────────────────────────────────── */
     #sidebar-tab {
       width: 28px; flex-shrink: 0;
@@ -658,6 +675,21 @@
   <span id="header-version" class="small text-secondary" style="opacity:0.5">v0.1</span>
   <span id="corpus-range-label" class="small text-secondary" style="opacity:0.65">Australian Federal Parliament · House &amp; Senate · 1998–2026</span>
   <span id="header-stats" class="small text-secondary"></span>
+  <div id="search-pin">
+    <div id="search-pin-inner">
+      <div class="search-wrap">
+        <div class="search-input-row">
+          <input type="text" id="expr-input" class="form-control form-control-lg"
+            placeholder="Search…" autocomplete="off" />
+          <div class="search-inner-btns">
+            <button id="clear-btn" onclick="clearSearch()" title="Clear search">✕</button>
+            <button id="search-btn" onclick="doSearch(1)">Search</button>
+          </div>
+        </div>
+        <div id="expr-combined" class="d-none"></div>
+      </div>
+    </div>
+  </div>
 
   <button id="mobile-filter-btn" onclick="openMobileSidebar()" class="small ms-auto me-2" style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:5px;color:var(--tn-fg);cursor:pointer;padding:4px 10px;font-size:0.82rem;align-items:center;gap:5px;" title="Filters">⚙ Filters</button>
   <button id="theme-toggle" onclick="toggleTheme()" class="small me-3" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75" title="Toggle light/dark mode"></button>
@@ -672,19 +704,7 @@
     <!-- ① Search + chart — first in DOM (top on mobile, right-top on desktop) -->
     <div id="main-top" class="p-3">
 
-      <!-- Search bar -->
       <div class="mb-2">
-        <div class="search-wrap">
-          <div class="search-input-row">
-            <input type="text" id="expr-input" class="form-control form-control-lg"
-              placeholder="Search terms (optional) — e.g. climate change  or  'renewables' | 'clean energy'" />
-            <div class="search-inner-btns">
-              <button id="clear-btn" onclick="clearSearch()" title="Clear search">✕</button>
-              <button id="search-btn" onclick="doSearch(1)">Search</button>
-            </div>
-          </div>
-          <div id="expr-combined" class="d-none"></div>
-        </div>
         <div class="d-flex align-items-center gap-3 mt-1">
           <div class="small text-muted">
             Boolean syntax: quoted terms, AND (&amp;), OR (|), parentheses.
