@@ -2531,10 +2531,16 @@ function renderResults(data) {
   // Terms display: per-term union expansion (term | alias1 | alias2), one per line
   const termsEl = document.getElementById("query-terms-display");
   const termLines = [];
+  const _codeStyle = "font-family:monospace;font-size:0.74rem;background:transparent;padding:0";
   for (const [term, aliases] of _selectedAliases) {
     if (!aliases.size) continue;
-    const parts = [`'${term}'`, ...[...aliases].map(a => `'${a}'`)];
-    termLines.push(`<code style="font-size:0.82rem">${esc(parts.join(" | "))}</code>`);
+    const sep = `<span style="color:var(--tn-fg-dim)"> | </span>`;
+    const aliasSpans = [...aliases].map(a =>
+      `<span style="color:var(--tn-fg)">'${esc(a)}'</span>`
+    ).join(sep);
+    termLines.push(
+      `<span style="${_codeStyle}"><span style="color:var(--tn-green)">'${esc(term)}'</span>${sep}${aliasSpans}</span>`
+    );
   }
   if (termLines.length) {
     termsEl.innerHTML = termLines.join("<br>");
