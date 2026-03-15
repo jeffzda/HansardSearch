@@ -541,6 +541,11 @@
       border-right: 1px solid var(--tn-bg-hi2);
     }
     #sidebar-tab:hover { background: var(--tn-bg-hi); }
+    @keyframes sidebar-pulse {
+      0%,100% { background: transparent; }
+      25%,75%  { background: var(--tn-bg-hi2); }
+    }
+    #sidebar-tab.pulse { animation: sidebar-pulse 0.9s ease; }
     #sidebar-tab span {
       writing-mode: vertical-rl; transform: rotate(180deg);
       font-size: 0.68rem; letter-spacing: 0.13em; text-transform: uppercase;
@@ -2468,6 +2473,12 @@ async function doSearch(page) {
     showError("Network error: " + err.message);
   } finally {
     setLoading(false);
+    const tab = document.getElementById("sidebar-tab");
+    tab.classList.remove("pulse");
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      tab.classList.add("pulse");
+      tab.addEventListener("animationend", () => tab.classList.remove("pulse"), { once: true });
+    }));
   }
 }
 
