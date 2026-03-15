@@ -112,7 +112,6 @@
     /* ── Layout ───────────────────────────────────────────────────────────── */
     #header-bar { background: var(--tn-bg-dark) !important; color: var(--tn-fg); border-bottom: 1px solid var(--tn-bg-hi2); flex-wrap: wrap; row-gap: 0; }
     @media (max-width: 960px) {
-      body.searched #search-pin { flex: 1 1 100%; max-width: none; order: 100; padding: 5px 0 4px; border-top: 1px solid var(--tn-bg-hi2); margin-top: -14px; }
     }
     #sidebar {
       background-color: var(--tn-bg-dark) !important;
@@ -212,7 +211,6 @@
       #main-results.mobile-open #reading-pane {
         flex: 1; overflow-y: auto; min-height: 0;
       }
-      body.searched #main-top { display: none; }
     }
 
     /* ── Desktop accordion (overridden on mobile) ────────────────────────── */
@@ -516,29 +514,9 @@
     #landing-title { font-size: 2rem; font-weight: 700; margin: 0; }
     #landing-sub   { font-size: 0.9rem; opacity: 0.6; margin: 0; }
 
-    #search-pin {
-      display: none; flex: 1; min-width: 0; max-width: 540px;
-    }
-    body.searched #search-pin { display: flex; align-items: center; }
-    body.searched #corpus-range-label { display: none !important; }
-    body.searched #header-stats       { display: none !important; }
-    #search-pin-inner {
-      display: flex; align-items: center; gap: 6px; width: 100%;
-    }
-    #pin-input { flex: 1; min-width: 0; font-size: 0.85rem; }
-    #pin-clear-btn {
-      background: none; border: none; color: var(--tn-comment);
-      font-size: 0.9rem; padding: 2px 5px; cursor: pointer; line-height: 1;
-      border-radius: 3px; flex-shrink: 0;
-    }
-    #pin-clear-btn:hover { color: var(--tn-red); background: var(--tn-bg-hi); }
-    #pin-search-btn {
-      background: var(--tn-blue); border: none; color: var(--tn-bg-dark);
-      font-size: 0.78rem; font-weight: 600; padding: 4px 10px;
-      border-radius: 4px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
-    }
-    #pin-search-btn:hover { background: #6aaf9f; }
     #pin-chamber-row { display: none; }
+    #alias-toggle-btn.active { background: var(--tn-bg-hi2); }
+    #alias-badge { font-size: 0.72rem; color: var(--tn-blue); margin-right:2px; }
 
     /* ── Sidebar tab + inner ──────────────────────────────────────────────── */
     #sidebar-tab {
@@ -680,13 +658,7 @@
   <span id="header-version" class="small text-secondary" style="opacity:0.5">v0.1</span>
   <span id="corpus-range-label" class="small text-secondary" style="opacity:0.65">Australian Federal Parliament · House &amp; Senate · 1998–2026</span>
   <span id="header-stats" class="small text-secondary"></span>
-  <div id="search-pin">
-    <div id="search-pin-inner">
-      <input type="text" id="pin-input" class="form-control form-control-sm" placeholder="Search…" autocomplete="off" />
-      <button id="pin-clear-btn" title="Clear">✕</button>
-      <button id="pin-search-btn">Search</button>
-    </div>
-  </div>
+
   <button id="mobile-filter-btn" onclick="openMobileSidebar()" class="small ms-auto me-2" style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:5px;color:var(--tn-fg);cursor:pointer;padding:4px 10px;font-size:0.82rem;align-items:center;gap:5px;" title="Filters">⚙ Filters</button>
   <button id="theme-toggle" onclick="toggleTheme()" class="small me-3" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75" title="Toggle light/dark mode"></button>
   <a href="/help" class="small me-3" style="color:var(--tn-comment);text-decoration:none;opacity:0.75" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Help</a>
@@ -722,6 +694,12 @@
             <input class="form-check-input" type="checkbox" id="f-case-sensitive" />
             <label class="form-check-label small text-muted" for="f-case-sensitive">Case sensitive</label>
           </div>
+          <button id="alias-toggle-btn" class="d-none btn btn-sm btn-outline-secondary ms-1"
+            style="font-size:0.78rem; white-space:nowrap"
+            onclick="toggleAliases()"
+            title="Show/hide related term suggestions">
+            Related <span id="alias-badge"></span>▾
+          </button>
         </div>
         <!-- Related terms -->
         <div id="alias-container" class="d-none mt-2 p-2 border rounded">
@@ -1470,59 +1448,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const _hasUrlParams = new URLSearchParams(location.search).toString() !== '';
   if (_hasUrlParams) doSearch(1);
 
-  // ── Pin bar: keep expr-input and pin-input in sync ──────────────────────
-  const _pinInput  = document.getElementById('pin-input');
-  const _exprInput = document.getElementById('expr-input');
-
-  _pinInput.addEventListener('input', () => {
-    _exprInput.value = _pinInput.value;
-  });
-  _exprInput.addEventListener('input', () => {
-    _pinInput.value = _exprInput.value;
-  });
-
-  // Pin bar search button / Enter key
-  document.getElementById('pin-search-btn').addEventListener('click', () => {
-    window.scrollTo({ top: 0, behavior: 'instant' });
-    doSearch(1);
-  });
-  _pinInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { window.scrollTo({ top: 0, behavior: 'instant' }); doSearch(1); }
-  });
-
-  // Pin bar clear button
-  document.getElementById('pin-clear-btn').addEventListener('click', () => {
-    _pinInput.value = '';
-    _exprInput.value = '';
-    window.scrollTo({ top: 0, behavior: 'instant' });
-    doSearch(1);
-  });
-
-  // Pin chamber radios → sync to main and trigger search (directly, no autoSearch double-fire)
-  document.querySelectorAll('input[name="pin-chamber"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const mainRadio = document.querySelector(`input[name="f-chamber"][value="${radio.value}"]`);
-      if (mainRadio) {
-        mainRadio.checked = true;
-        // Suppress the autoSearch triggered by the main radio's change event
-        clearTimeout(_searchTimeout);
-      }
-      window.scrollTo({ top: 0, behavior: 'instant' });
-      doSearch(1);
-    });
-  });
-
-  // Main chamber radios → also sync pin radios (no search — main radio already has autoSearch)
-  document.querySelectorAll('input[name="f-chamber"]').forEach(radio => {
-    radio.addEventListener('change', () => _syncPinChamberFromMain());
-  });
 });
 
-function _syncPinChamberFromMain() {
-  const val = document.querySelector('input[name="f-chamber"]:checked')?.value || 'both';
-  const pinRadio = document.querySelector(`input[name="pin-chamber"][value="${val}"]`);
-  if (pinRadio) pinRadio.checked = true;
-}
 
 let _senatorsByState  = {};
 let _mpsByStateType   = {};
@@ -2811,15 +2738,11 @@ function _autoOpenActiveSections() {
 // ── Clear search ───────────────────────────────────────────────────────────────
 function runExampleSearch(query) {
   document.getElementById("expr-input").value = query;
-  const pinInput = document.getElementById("pin-input");
-  if (pinInput) pinInput.value = query;
   doSearch(1);
 }
 
 function clearSearch() {
   document.getElementById("expr-input").value = "";
-  const pinInput = document.getElementById("pin-input");
-  if (pinInput) pinInput.value = "";
   _lastAliasTerms = new Set();
   _selectedAliases.clear();
   updateCombinedExpr();
@@ -2831,8 +2754,6 @@ function clearSearch() {
 function resetAll() {
   // Clear expression and aliases
   document.getElementById("expr-input").value = "";
-  const _pinInput = document.getElementById("pin-input");
-  if (_pinInput) _pinInput.value = "";
   _lastAliasTerms = new Set();
   _selectedAliases.clear();
   updateCombinedExpr();
@@ -2840,7 +2761,6 @@ function resetAll() {
   // Reset chamber to both
   const bothEl = document.querySelector('input[name="f-chamber"][value="both"]');
   if (bothEl) bothEl.checked = true;
-  _syncPinChamberFromMain();
   // Reset sort and page size
   _sortCol = null; _sortDir = "desc";
   updateSortHeaders();
@@ -2938,12 +2858,24 @@ async function updateAliasesIncremental() {
 
   _lastAliasTerms = newTerms;
   updateCombinedExpr();
-  if (groups.children.length > 0) container.classList.remove("d-none");
 
   if (termsToFetch.length) {
     await Promise.all(termsToFetch.map(term => fetchAndRenderGroup(term)));
   }
-  if (!groups.children.length) container.classList.add("d-none");
+
+  // Update badge; only close container if no groups remain
+  const count = groups.children.length;
+  const toggleBtn = document.getElementById("alias-toggle-btn");
+  const badge = document.getElementById("alias-badge");
+  if (count > 0) {
+    toggleBtn.classList.remove("d-none");
+    badge.textContent = count + " ";
+  } else {
+    toggleBtn.classList.add("d-none");
+    badge.textContent = "";
+    container.classList.add("d-none");
+    toggleBtn.classList.remove("active");
+  }
 }
 
 function _caseVariants(term) {
@@ -3065,6 +2997,17 @@ function renderAliasGroup(term, aliases, groupEl) {
 function closeAliases() {
   document.getElementById("alias-container").classList.add("d-none");
   document.getElementById("alias-groups").innerHTML = "";
+  const btn = document.getElementById("alias-toggle-btn");
+  if (btn) { btn.classList.add("d-none"); btn.classList.remove("active"); }
+  const badge = document.getElementById("alias-badge");
+  if (badge) badge.textContent = "";
+}
+
+function toggleAliases() {
+  const container = document.getElementById("alias-container");
+  const btn = document.getElementById("alias-toggle-btn");
+  const hidden = container.classList.toggle("d-none");
+  btn.classList.toggle("active", !hidden);
 }
 
 // ── Chart ──────────────────────────────────────────────────────────────────────
@@ -3311,25 +3254,19 @@ function setLoading(on) {
   const btn      = document.getElementById("search-btn");
   const clearBtn = document.getElementById("clear-btn");
   const input    = document.getElementById("expr-input");
-  const pinInput = document.getElementById("pin-input");
-  const pinBtn   = document.getElementById("pin-search-btn");
   const bar      = document.getElementById("progress-bar");
   if (on) {
     document.body.classList.add("app-loading");
     if (btn)    { btn.disabled = true; btn.innerHTML = '<span class="loading-pulse">…</span>'; }
     if (clearBtn) { clearBtn.disabled = true; }
-    if (pinBtn) { pinBtn.disabled = true; pinBtn.innerHTML = '<span class="loading-pulse">…</span>'; }
     input.dataset.placeholder = input.placeholder;
     input.placeholder = "Searching…";
-    if (pinInput) { pinInput.dataset.placeholder = pinInput.placeholder; pinInput.placeholder = "Searching…"; }
     if (bar) bar.style.display = "block";
   } else {
     document.body.classList.remove("app-loading");
     if (btn)    { btn.disabled = false; btn.textContent = "Search"; }
     if (clearBtn) { clearBtn.disabled = false; }
-    if (pinBtn) { pinBtn.disabled = false; pinBtn.textContent = "Search"; }
     input.placeholder = input.dataset.placeholder || input.placeholder;
-    if (pinInput) pinInput.placeholder = pinInput.dataset.placeholder || "New search…";
     if (bar) bar.style.display = "none";
   }
 }
