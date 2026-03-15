@@ -751,8 +751,8 @@
       </div>
     </div>
   </div><!-- end row 1 -->
-    <!-- Row 2: selected alias chips -->
-    <div id="expr-combined" class="d-none"></div>
+    <!-- Row 2: selected alias chips (hidden — terms shown in cards pane instead) -->
+    <div id="expr-combined" style="display:none!important"></div>
     <!-- Row 3: controls -->
     <div id="search-controls">
       <div class="form-check form-check-inline mb-0">
@@ -1073,6 +1073,7 @@
 
       <div id="cards-header">
         <div id="query-display" class="d-none"></div>
+        <div id="query-terms-display" class="d-none" style="font-size:0.78rem;margin-bottom:4px;line-height:1.7"></div>
         <!-- Sort bar -->
         <div id="sort-bar" class="sort-bar mb-2">
           <span style="font-size:0.72rem" class="text-muted me-1">Sort:</span>
@@ -2516,13 +2517,33 @@ function renderResults(data) {
   _currentResults = data.results || [];
   _corpusSeeds = data.corpus_seeds || [];
 
-  // Query display
+  // Query display (full expression, monospace)
   const queryEl = document.getElementById("query-display");
   if (_lastFullExpression) {
     queryEl.textContent = _lastFullExpression;
     queryEl.classList.remove("d-none");
   } else {
     queryEl.classList.add("d-none");
+  }
+
+  // Terms display: main terms in green, selected aliases in dim font
+  const termsEl = document.getElementById("query-terms-display");
+  const baseTerms = extractSearchTerms(document.getElementById("expr-input").value.trim());
+  if (baseTerms.length) {
+    const termParts = baseTerms.map(term => {
+      let html = `<span style="color:var(--tn-green);font-weight:600">'${esc(term)}'</span>`;
+      const aliases = _selectedAliases.get(term);
+      if (aliases && aliases.size) {
+        for (const alias of aliases) {
+          html += ` <span style="color:var(--tn-fg-dim)">${esc(alias)}</span>`;
+        }
+      }
+      return html;
+    });
+    termsEl.innerHTML = termParts.join(' <span style="opacity:0.35;padding:0 2px">·</span> ');
+    termsEl.classList.remove("d-none");
+  } else {
+    termsEl.classList.add("d-none");
   }
 
   // Stats bar
