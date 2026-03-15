@@ -1072,7 +1072,7 @@
     <div id="results-list-col">
 
       <div id="cards-header">
-        <div id="query-display" class="d-none"></div>
+        <div id="query-display" class="d-none"><!-- raw expr --><span id="related-toggle" class="d-none" onclick="toggleRelatedTerms()" style="font-size:0.72rem;color:var(--tn-comment);cursor:pointer;margin-left:8px;user-select:none"> + Related</span></div>
         <div id="query-terms-display" class="d-none" style="font-size:0.78rem;margin-bottom:4px;line-height:1.7"></div>
         <!-- Sort bar -->
         <div id="sort-bar" class="sort-bar mb-2">
@@ -2528,8 +2528,9 @@ function renderResults(data) {
     queryEl.classList.add("d-none");
   }
 
-  // Terms display: per-term union expansion (term | alias1 | alias2), one per line
+  // Terms display: per-term union expansion — collapsed by default
   const termsEl = document.getElementById("query-terms-display");
+  const toggleEl = document.getElementById("related-toggle");
   const termLines = [];
   const _codeStyle = "font-family:monospace;font-size:0.74rem;background:transparent;padding:0";
   for (const [term, aliases] of _selectedAliases) {
@@ -2544,9 +2545,12 @@ function renderResults(data) {
   }
   if (termLines.length) {
     termsEl.innerHTML = termLines.join("<br>");
-    termsEl.classList.remove("d-none");
+    termsEl.classList.add("d-none");   // collapsed by default
+    toggleEl.classList.remove("d-none");
+    toggleEl.textContent = " + Related";
   } else {
     termsEl.classList.add("d-none");
+    toggleEl.classList.add("d-none");
   }
 
   // Stats bar
@@ -3137,6 +3141,13 @@ function toggleAliases() {
   const btn = document.getElementById("alias-toggle-btn");
   const hidden = container.classList.toggle("d-none");
   btn.classList.toggle("active", !hidden);
+}
+
+function toggleRelatedTerms() {
+  const termsEl = document.getElementById("query-terms-display");
+  const toggleEl = document.getElementById("related-toggle");
+  const hidden = termsEl.classList.toggle("d-none");
+  toggleEl.textContent = hidden ? " + Related" : " − Related";
 }
 
 function toggleFilterInfo(e) {
