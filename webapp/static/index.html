@@ -1072,7 +1072,10 @@
     <div id="results-list-col">
 
       <div id="cards-header">
-        <div id="query-display" class="d-none"><!-- raw expr --><span id="related-toggle" class="d-none" onclick="toggleRelatedTerms()" style="font-size:0.72rem;color:var(--tn-comment);cursor:pointer;margin-left:8px;user-select:none"> + Related</span></div>
+        <div style="display:flex;align-items:baseline;gap:0">
+          <div id="query-display" class="d-none"></div>
+          <span id="related-toggle" class="d-none" onclick="toggleRelatedTerms()" style="font-size:0.72rem;color:var(--tn-comment);cursor:pointer;margin-left:8px;user-select:none"> + Related</span>
+        </div>
         <div id="query-terms-display" class="d-none" style="font-size:0.78rem;margin-bottom:4px;line-height:1.7"></div>
         <!-- Sort bar -->
         <div id="sort-bar" class="sort-bar mb-2">
