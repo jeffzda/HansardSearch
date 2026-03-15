@@ -518,12 +518,14 @@
     #alias-toggle-btn.active { background: var(--tn-bg-hi2); }
     #alias-badge { font-size: 0.72rem; color: var(--tn-blue); margin-right:2px; }
 
-    #search-pin {
-      display: none; flex: 1; min-width: 0; max-width: 540px;
+    #search-pin-group {
+      display: none; flex: 1; min-width: 0; max-width: 560px;
+      align-items: center; gap: 6px;
     }
-    body.searched #search-pin { display: flex; align-items: center; }
+    body.searched #search-pin-group { display: flex; }
     body.searched #corpus-range-label { display: none !important; }
     body.searched #header-stats       { display: none !important; }
+    #search-pin { flex: 1; min-width: 0; }
     #search-pin-inner {
       display: flex; align-items: center; width: 100%;
     }
@@ -532,7 +534,7 @@
       font-size: 0.85rem; padding-top: 5px; padding-bottom: 5px;
     }
     @media (max-width: 960px) {
-      body.searched #search-pin { flex: 1 1 100%; max-width: none; order: 100; padding: 5px 0 4px; border-top: 1px solid var(--tn-bg-hi2); margin-top: -14px; }
+      body.searched #search-pin-group { flex: 1 1 100%; max-width: none; order: 100; padding: 5px 0 4px; border-top: 1px solid var(--tn-bg-hi2); margin-top: -14px; }
     }
 
     /* ── Sidebar tab + inner ──────────────────────────────────────────────── */
@@ -675,45 +677,47 @@
   <span id="header-version" class="small text-secondary" style="opacity:0.5">v0.1</span>
   <span id="corpus-range-label" class="small text-secondary" style="opacity:0.65">Australian Federal Parliament · House &amp; Senate · 1998–2026</span>
   <span id="header-stats" class="small text-secondary"></span>
-  <div id="search-pin">
-    <div id="search-pin-inner">
-      <div class="search-wrap">
-        <div class="search-input-row">
-          <input type="text" id="expr-input" class="form-control form-control-lg"
-            placeholder="Search…" autocomplete="off" />
-          <div class="search-inner-btns">
-            <button id="clear-btn" onclick="clearSearch()" title="Clear search">✕</button>
-            <button id="search-btn" onclick="doSearch(1)">Search</button>
+  <div id="search-pin-group">
+    <div id="search-pin">
+      <div id="search-pin-inner">
+        <div class="search-wrap">
+          <div class="search-input-row">
+            <input type="text" id="expr-input" class="form-control form-control-lg"
+              placeholder="Search…" autocomplete="off" />
+            <div class="search-inner-btns">
+              <button id="clear-btn" onclick="clearSearch()" title="Clear search">✕</button>
+              <button id="search-btn" onclick="doSearch(1)">Search</button>
+            </div>
           </div>
+          <div id="expr-combined" class="d-none"></div>
         </div>
-        <div id="expr-combined" class="d-none"></div>
       </div>
     </div>
-  </div>
-  <div style="position:relative; flex-shrink:0;">
-    <button id="search-info-btn" onclick="toggleSearchInfo(event)"
-      title="Search syntax help"
-      style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:50%;color:var(--tn-comment);
-             cursor:pointer;font-size:0.72rem;font-weight:700;line-height:1;
-             width:18px;height:18px;padding:0;display:flex;align-items:center;justify-content:center;
-             opacity:0.7;flex-shrink:0;">i</button>
-    <div id="search-info-popup" class="d-none"
-      style="position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);
-             min-width:320px;max-width:420px;z-index:2000;
-             background:var(--tn-bg-hi);border:1px solid var(--tn-bg-hi2);
-             border-radius:6px;padding:12px 14px;font-size:0.82rem;
-             box-shadow:0 4px 16px rgba(0,0,0,0.35);">
-      <div style="font-weight:600;margin-bottom:6px;color:var(--tn-fg)">Search syntax</div>
-      <div style="color:var(--tn-fg-dim);line-height:1.6">
-        Quoted phrases, <code>AND</code> (<code>&amp;</code>), <code>OR</code> (<code>|</code>), parentheses.<br>
-        Terms without quotes match any word form.<br><br>
-        <span style="color:var(--tn-comment);font-size:0.78rem">Example — click to run:</span><br>
-        <code class="example-query"
-          style="display:inline-block;margin-top:4px;cursor:pointer"
-          title="Click to run this search"
-          onclick="runExampleSearch(&quot;('climate change' | agriculture) &amp; 'fuel subsidies'&quot;); toggleSearchInfo()">
-          ('climate change' | agriculture) &amp; 'fuel subsidies'
-        </code>
+    <div style="position:relative; flex-shrink:0;">
+      <button id="search-info-btn" onclick="toggleSearchInfo(event)"
+        title="Search syntax help"
+        style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:50%;color:var(--tn-comment);
+               cursor:pointer;font-size:0.72rem;font-weight:700;line-height:1;
+               width:18px;height:18px;padding:0;display:flex;align-items:center;justify-content:center;
+               opacity:0.7;flex-shrink:0;">i</button>
+      <div id="search-info-popup" class="d-none"
+        style="position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);
+               min-width:320px;max-width:420px;z-index:2000;
+               background:var(--tn-bg-hi);border:1px solid var(--tn-bg-hi2);
+               border-radius:6px;padding:12px 14px;font-size:0.82rem;
+               box-shadow:0 4px 16px rgba(0,0,0,0.35);">
+        <div style="font-weight:600;margin-bottom:6px;color:var(--tn-fg)">Search syntax</div>
+        <div style="color:var(--tn-fg-dim);line-height:1.6">
+          Quoted phrases, <code>AND</code> (<code>&amp;</code>), <code>OR</code> (<code>|</code>), parentheses.<br>
+          Terms without quotes match any word form.<br><br>
+          <span style="color:var(--tn-comment);font-size:0.78rem">Example — click to run:</span><br>
+          <code class="example-query"
+            style="display:inline-block;margin-top:4px;cursor:pointer"
+            title="Click to run this search"
+            onclick="runExampleSearch(&quot;('climate change' | agriculture) &amp; 'fuel subsidies'&quot;); toggleSearchInfo()">
+            ('climate change' | agriculture) &amp; 'fuel subsidies'
+          </code>
+        </div>
       </div>
     </div>
   </div>
