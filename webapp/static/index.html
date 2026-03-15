@@ -2526,21 +2526,11 @@ function renderResults(data) {
     queryEl.classList.add("d-none");
   }
 
-  // Terms display: main terms in green, selected aliases in dim font
+  // Terms display: show alias-expanded expression in code style below the query
   const termsEl = document.getElementById("query-terms-display");
-  const baseTerms = extractSearchTerms(document.getElementById("expr-input").value.trim());
-  if (baseTerms.length) {
-    const termParts = baseTerms.map(term => {
-      let html = `<span style="color:var(--tn-green);font-weight:600">'${esc(term)}'</span>`;
-      const aliases = _selectedAliases.get(term);
-      if (aliases && aliases.size) {
-        for (const alias of aliases) {
-          html += ` <span style="color:var(--tn-fg-dim)">${esc(alias)}</span>`;
-        }
-      }
-      return html;
-    });
-    termsEl.innerHTML = termParts.join(' <span style="opacity:0.35;padding:0 2px">·</span> ');
+  const hasAliases = [..._selectedAliases.values()].some(s => s.size > 0);
+  if (_lastFullExpression && hasAliases) {
+    termsEl.innerHTML = `<code style="font-size:0.82rem">${esc(_lastFullExpression)}</code>`;
     termsEl.classList.remove("d-none");
   } else {
     termsEl.classList.add("d-none");
