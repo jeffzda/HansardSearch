@@ -701,8 +701,8 @@
                width:18px;height:18px;padding:0;display:flex;align-items:center;justify-content:center;
                opacity:0.7;flex-shrink:0;">i</button>
       <div id="search-info-popup" class="d-none"
-        style="position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);
-               min-width:320px;max-width:420px;z-index:2000;
+        style="position:fixed;top:0;left:0;
+               width:min(420px,calc(100vw - 16px));z-index:2000;
                background:var(--tn-bg-hi);border:1px solid var(--tn-bg-hi2);
                border-radius:6px;padding:12px 14px;font-size:0.82rem;
                box-shadow:0 4px 16px rgba(0,0,0,0.35);">
@@ -3059,7 +3059,20 @@ function toggleAliases() {
 
 function toggleSearchInfo(e) {
   if (e) e.stopPropagation();
-  document.getElementById("search-info-popup").classList.toggle("d-none");
+  const popup = document.getElementById("search-info-popup");
+  const isNowHidden = popup.classList.toggle("d-none");
+  if (!isNowHidden) {
+    const btn = document.getElementById("search-info-btn");
+    const btnRect = btn.getBoundingClientRect();
+    const popupW = Math.min(420, window.innerWidth - 16);
+    const top = btnRect.bottom + 8;
+    // Prefer right-aligned to button; clamp within viewport
+    let left = btnRect.right - popupW;
+    left = Math.max(8, Math.min(left, window.innerWidth - popupW - 8));
+    popup.style.top  = top + "px";
+    popup.style.left = left + "px";
+    popup.style.width = popupW + "px";
+  }
 }
 document.addEventListener("click", e => {
   const popup = document.getElementById("search-info-popup");
