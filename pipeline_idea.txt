@@ -1,0 +1,32 @@
+Here's the Hansard policy insight extraction pipeline we discussed:
+Stage 1: Single extraction pass
+Extract rich contextual metadata from each parliamentary contribution:
+
+Bill name (if explicitly mentioned)
+Speaker role, party, chamber, date
+Key actors and organizations mentioned
+Subject keywords and policy domain signals
+Apparent purpose (advocating, questioning, reporting, recommending)
+A "what_discussed" summary broader than just delivery insights
+Any explicit continuity/discontinuity language ("this bill reintroduces..." or "we are abandoning the previous approach...")
+
+Stage 2: Policy initiative clustering
+
+Primary clustering: Timestamp + topic for contributions close in time with topical overlap
+Orphan reconciliation: Maximum confidence topic matching for contributions that don't cluster naturally
+Cross-parliament handling: Strong topic matches across electoral boundaries get moderate confidence; weak matches get heavy penalty
+
+Stage 3: Timeline assembly
+Build policy initiative records from clustered contributions showing:
+
+First parliamentary appearance
+Committee referrals and evidence sessions
+Key arguments and counter-arguments presented
+Amendment attempts and outcomes
+Passage, failure, or abandonment
+Implementation signals and subsequent reviews
+
+Stage 4: Entity resolution for long-delayed policies
+The hardest part - recognizing when contributions separated by years are actually the same policy story. Uses explicit language detection for policy continuity/discontinuity and confidence scoring for potential matches.
+The output would be policy initiative timelines as the unit of analysis - complete decision arcs rather than individual contributions.
+For the taxonomy design, we'd need to define the policy lifecycle phases, failure modes, and outcome classes equivalent to what you built for ARENA but adapted to parliamentary processes.

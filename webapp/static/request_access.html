@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hansard Search — Request Access</title>
+  <style>
+    :root {
+      --tn-bg:       #282828;
+      --tn-bg-dark:  #1d2021;
+      --tn-bg-hi:    #3c3836;
+      --tn-bg-hi2:   #504945;
+      --tn-fg:       #ebdbb2;
+      --tn-fg-dim:   #d5c4a1;
+      --tn-comment:  #928374;
+      --tn-blue:     #83a598;
+      --tn-red:      #fb4934;
+      --tn-green:    #b8bb26;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--tn-bg-dark);
+      color: var(--tn-fg);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 0.9rem;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .card {
+      background: var(--tn-bg);
+      border: 1px solid var(--tn-bg-hi2);
+      border-radius: 8px;
+      padding: 2rem 2.5rem;
+      width: 100%;
+      max-width: 420px;
+    }
+    .title { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .subtitle { font-size: 0.78rem; color: var(--tn-comment); margin-bottom: 1.75rem; }
+    label {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--tn-comment);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.3rem;
+    }
+    input[type="text"],
+    input[type="email"],
+    textarea {
+      width: 100%;
+      background: var(--tn-bg-hi);
+      border: 1px solid var(--tn-bg-hi2);
+      border-radius: 5px;
+      color: var(--tn-fg);
+      padding: 9px 12px;
+      font-size: 0.9rem;
+      outline: none;
+      margin-bottom: 1.1rem;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus {
+      border-color: var(--tn-blue);
+      box-shadow: 0 0 0 2px rgba(131,165,152,.15);
+    }
+    textarea { resize: vertical; min-height: 80px; }
+    button[type="submit"] {
+      width: 100%;
+      background: var(--tn-blue);
+      border: none;
+      border-radius: 5px;
+      color: var(--tn-bg-dark);
+      font-size: 0.9rem;
+      font-weight: 700;
+      padding: 10px;
+      cursor: pointer;
+      margin-top: 0.25rem;
+    }
+    button[type="submit"]:hover { opacity: 0.9; }
+    button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+    #msg {
+      border-radius: 4px;
+      font-size: 0.82rem;
+      padding: 8px 12px;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    #msg.error { background: rgba(251,73,52,.12); border: 1px solid rgba(251,73,52,.3); color: var(--tn-red); }
+    #msg.success { background: rgba(184,187,38,.12); border: 1px solid rgba(184,187,38,.3); color: var(--tn-green); }
+    .footer { margin-top: 1.5rem; font-size: 0.75rem; color: var(--tn-comment); text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="title">HANSARD SEARCH</div>
+    <div class="subtitle">Request access to the search tool</div>
+
+    <div id="msg"></div>
+
+    <form id="request-form" onsubmit="doRequest(event)">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" autocomplete="name" required autofocus />
+
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" autocomplete="email" required />
+
+      <label for="organisation">Organisation <span style="color:var(--tn-comment);text-transform:none;font-size:0.72rem">(optional)</span></label>
+      <input type="text" id="organisation" name="organisation" autocomplete="organization" />
+
+      <label for="reason">How do you plan to use it? <span style="color:var(--tn-comment);text-transform:none;font-size:0.72rem">(optional)</span></label>
+      <textarea id="reason" name="reason" placeholder="e.g. policy research, journalism, academic work…"></textarea>
+
+      <button type="submit" id="submit-btn">Send request</button>
+    </form>
+
+    <div class="footer"><a href="/login" style="color:var(--tn-blue)">Back to sign in</a></div>
+  </div>
+
+  <script>
+    async function doRequest(e) {
+      e.preventDefault();
+      const btn = document.getElementById("submit-btn");
+      const msgEl = document.getElementById("msg");
+      msgEl.style.display = "none";
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+
+      const name         = document.getElementById("name").value.trim();
+      const email        = document.getElementById("email").value.trim();
+      const organisation = document.getElementById("organisation").value.trim();
+      const reason       = document.getElementById("reason").value.trim();
+
+      try {
+        const r = await fetch("/api/request-access", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, email, organisation, reason }),
+        });
+        const data = await r.json();
+        if (r.ok) {
+          document.getElementById("request-form").style.display = "none";
+          msgEl.className = "success";
+          msgEl.textContent = "Request received — you'll hear back shortly.";
+          msgEl.style.display = "block";
+        } else {
+          msgEl.className = "error";
+          msgEl.textContent = data.error || "Something went wrong. Please try again.";
+          msgEl.style.display = "block";
+          btn.disabled = false;
+          btn.textContent = "Send request";
+        }
+      } catch {
+        msgEl.className = "error";
+        msgEl.textContent = "Network error. Please try again.";
+        msgEl.style.display = "block";
+        btn.disabled = false;
+        btn.textContent = "Send request";
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,3466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hansard Search</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- MAPS (disabled): D3 v7 used for choropleth maps — re-enable when maps are restored
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  -->
+  <style>
+    /* ── Gruvbox Medium palette ───────────────────────────────────────────── */
+    :root {
+      --tn-bg:       #282828;
+      --tn-bg-dark:  #1d2021;
+      --tn-bg-hi:    #3c3836;
+      --tn-bg-hi2:   #504945;
+      --tn-fg:       #ebdbb2;
+      --tn-fg-dim:   #d5c4a1;
+      --tn-comment:  #928374;
+      --tn-blue:     #83a598;
+      --tn-cyan:     #8ec07c;
+      --tn-green:    #b8bb26;
+      --tn-yellow:   #fabd2f;
+      --tn-orange:   #fe8019;
+      --tn-red:      #fb4934;
+      --tn-purple:   #d3869b;
+      --tn-teal:     #8ec07c;
+      /* ── Parliamentary chamber colours ──────────────────────────────────── */
+      --parl-senate: #9E3D1F;   /* Senate — red ochre, Australian landscape    */
+      --parl-house:  #4E6B4A;   /* House  — grey-green eucalyptus              */
+    }
+
+    /* ── Light mode overrides ────────────────────────────────────────────── */
+    body.light {
+      --tn-bg:       #f7f3ec;
+      --tn-bg-dark:  #ede8df;
+      --tn-bg-hi:    #e3ddd3;
+      --tn-bg-hi2:   #c9c2b4;
+      --tn-fg:       #2c2416;
+      --tn-fg-dim:   #4a3f30;
+      --tn-comment:  #7a6e5f;
+      --tn-blue:     #3a6b8a;
+      --tn-cyan:     #2e6b5e;
+      --tn-green:    #3b6b2e;
+      --tn-yellow:   #8a6a00;
+      --tn-orange:   #9a4a10;
+      --tn-red:      #8a1f1f;
+      --tn-purple:   #7a3060;
+      --tn-teal:     #2e6b5e;
+    }
+    body.light .bg-info  { color: #f0faf8 !important; }
+    body.light .bg-warning { color: #3a2800 !important; }
+    body.light .form-check-input { background-color: var(--tn-bg-hi); border-color: var(--tn-bg-hi2); }
+    body.light .form-control, body.light .form-select {
+      background-color: #fff; border-color: var(--tn-bg-hi2);
+    }
+    body.light .form-control:focus, body.light .form-select:focus {
+      background-color: #fff;
+    }
+
+    /* ── Base ─────────────────────────────────────────────────────────────── */
+    body { font-size: 1rem; background-color: var(--tn-bg); color: var(--tn-fg); }
+    .container-fluid { padding-left: 0 !important; padding-right: 0 !important; }
+    .text-muted, .text-secondary { color: var(--tn-comment) !important; }
+    .small { color: inherit; }
+    #sidebar .small { font-size: inherit !important; }
+    .date-range-row { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+    .date-range-row input { flex: 1; min-width: 0; }
+    .date-range-remove { background: none; border: none; color: var(--tn-comment); cursor: pointer;
+      padding: 0 3px; font-size: 1rem; line-height: 1; opacity: 0.6; flex-shrink: 0; }
+    .date-range-remove:hover { color: var(--tn-red); opacity: 1; }
+    .parl-label { display: inline-flex; gap: 0.3em; width: 100%; }
+    .parl-ord   { min-width: 2.2em; text-align: left; flex-shrink: 0; }
+    .parl-dates { white-space: nowrap; }
+    a { color: var(--tn-blue); }
+    code { color: var(--tn-teal); background: var(--tn-bg-hi); padding: 1px 4px; border-radius: 3px; }
+    code.example-query { cursor: pointer; border-bottom: 1px dashed var(--tn-teal); }
+    code.example-query:hover { background: var(--tn-bg-hi2); }
+
+    /* ── Trial banner ─────────────────────────────────────────────────────── */
+    #trial-banner {
+      display: none;
+      text-align: center;
+      padding: 8px 16px;
+    }
+    #trial-banner-inner {
+      display: inline-block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      padding: 6px 18px;
+      border-radius: 20px;
+      letter-spacing: 0.01em;
+    }
+    #trial-banner.urgent  #trial-banner-inner {
+      background: rgba(211,134,155,.18) !important;
+      color: #d3869b !important;
+      border: 1px solid rgba(211,134,155,.45) !important;
+    }
+    #trial-banner.warning #trial-banner-inner {
+      background: rgba(250,189,47,.13) !important;
+      color: #fabd2f !important;
+      border: 1px solid rgba(250,189,47,.35) !important;
+    }
+    #trial-banner.info    #trial-banner-inner {
+      background: rgba(131,165,152,.1) !important;
+      color: #83a598 !important;
+      border: 1px solid rgba(131,165,152,.3) !important;
+    }
+
+    /* ── Layout ───────────────────────────────────────────────────────────── */
+    #header-bar { background: var(--tn-bg-dark) !important; color: var(--tn-fg); border-bottom: 1px solid var(--tn-bg-hi2); flex-wrap: wrap; row-gap: 0; }
+    @media (max-width: 960px) {
+      body.searched #search-pin { flex: 1 1 100%; max-width: none; order: 100; padding: 5px 0 4px; border-top: 1px solid var(--tn-bg-hi2); margin-top: -14px; }
+    }
+    #sidebar {
+      background-color: var(--tn-bg-dark) !important;
+      border-color: var(--tn-bg-hi2) !important;
+      display: flex; flex-direction: row;
+      overflow: hidden;
+      border-right: 1px solid var(--tn-bg-hi2);
+    }
+    h6.text-uppercase { color: var(--tn-comment) !important; }
+
+    /* Desktop: CSS grid — sidebar spans both rows on the left */
+    @media (min-width: 520px) {
+      #app-row {
+        display: grid !important;
+        grid-template-columns: 28px 35fr 65fr;
+        grid-template-areas: "sidebar cards main-top" "sidebar cards main-results";
+        align-items: start;
+      }
+      #sidebar         { grid-area: sidebar; position: sticky; top: 0; width: 28px; }
+      #results-list-col { grid-area: cards; grid-row: 1 / 3; }
+      #sidebar.sidebar-open {
+        position: fixed; left: 0; top: 0; bottom: 0; width: 320px; z-index: 1040;
+        box-shadow: 4px 0 16px rgba(0,0,0,0.4);
+      }
+      body.searched #sidebar.sidebar-open { position: fixed !important; }
+      #main-top     { grid-area: main-top; }
+      #main-results { grid-area: main-results; }
+    }
+
+    /* Mobile header — hide verbose items, keep one compact row */
+    @media (max-width: 519px) {
+      #header-bar { padding: 8px 12px; gap: 8px; }
+      #header-version, #corpus-range-label, #header-stats { display: none !important; }
+    }
+
+    /* Mobile: sidebar becomes a fixed left drawer over the content */
+    @media (max-width: 519px) {
+      #app-row { display: block !important; }
+
+      /* ── Sidebar drawer ───────────────────────────────────────────────────── */
+      #sidebar {
+        position: fixed; top: 0; left: 0; bottom: 0;
+        width: min(300px, 85vw); z-index: 1041;
+        background: var(--tn-bg-dark) !important;
+        border-right: 1px solid var(--tn-bg-hi2) !important;
+        border-top: none !important; border-bottom: none !important;
+        overflow-y: auto; display: flex; flex-direction: column;
+        transform: translateX(-100%); transition: transform 0.25s ease;
+        padding-bottom: 0 !important;
+      }
+      #sidebar.open { transform: translateX(0); }
+
+      /* Drawer footer — Reset + Close */
+      #sidebar-drawer-footer {
+        display: flex; gap: 8px; padding: 10px 16px;
+        border-top: 1px solid var(--tn-bg-hi2); flex-shrink: 0; margin-top: auto;
+      }
+      #sidebar-drawer-footer button {
+        flex: 1; padding: 8px; border-radius: 6px; font-size: 0.85rem; cursor: pointer;
+        background: var(--tn-bg-hi); border: 1px solid var(--tn-bg-hi2); color: var(--tn-fg);
+      }
+
+      /* Overlay backdrop */
+      #filter-sheet-overlay {
+        display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 1040;
+      }
+      #filter-sheet-overlay.open { display: block; }
+
+      /* Mobile filter button in header */
+      #mobile-filter-btn { display: inline-flex !important; }
+
+/* Hide the desktop "Filters" heading and reset button — drawer has its own footer */
+      #sidebar > h6, #sidebar > .d-grid { display: none !important; }
+    }
+
+    /* Mobile filter button + drawer footer — hidden on desktop */
+    #mobile-filter-btn { display: none; }
+    #sidebar-drawer-footer { display: none; }
+
+    /* Mobile reading pane — full-screen overlay */
+    #mobile-back-btn { display: none; }
+    @media (max-width: 519px) {
+      #mobile-back-btn {
+        display: block; width: 100%; text-align: left;
+        background: var(--tn-bg-hi); border: none; border-bottom: 1px solid var(--tn-bg-hi2);
+        color: var(--tn-fg); font-size: 0.85rem; padding: 10px 14px;
+        cursor: pointer; flex-shrink: 0;
+      }
+      #mobile-back-btn:hover { background: var(--tn-bg-hi2); }
+      #main-results {
+        display: none !important;
+        position: fixed; inset: 0; z-index: 300;
+        background: var(--tn-bg); flex-direction: column;
+        overflow: hidden;
+      }
+      #main-results.mobile-open { display: flex !important; }
+      #main-results.mobile-open #reading-pane {
+        flex: 1; overflow-y: auto; min-height: 0;
+      }
+      body.searched #main-top { display: none; }
+    }
+
+    /* ── Desktop accordion (overridden on mobile) ────────────────────────── */
+    .filter-section-header { display: none !important; }
+    .filter-section-body   { display: none; }
+    .filter-section-body.open { display: block !important; }
+
+    .filter-section-trigger {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; padding: 5px 0; margin-bottom: 0;
+      background: none; border: none; border-bottom: 1px solid var(--tn-bg-hi2);
+      color: var(--tn-fg); font-weight: 600; font-size: 0.85rem;
+      cursor: pointer; text-align: left; user-select: none;
+    }
+    .filter-section-trigger::after {
+      content: "›"; font-size: 1.1rem; color: var(--tn-comment);
+      transition: transform 0.15s; display: inline-block;
+    }
+    .filter-section-trigger.open::after { transform: rotate(90deg); }
+    .filter-section-trigger.open { margin-bottom: 6px; }
+    .filter-section-trigger .fsb-badge {
+      font-size: 0.68rem; background: var(--tn-orange); color: var(--tn-bg-dark);
+      border-radius: 10px; padding: 1px 6px; font-weight: 700;
+      margin-left: auto; margin-right: 6px;
+    }
+
+    /* ── Search wrap ──────────────────────────────────────────────────────── */
+    .search-wrap {
+      border: 1px solid var(--tn-bg-hi2); border-radius: 6px; overflow: hidden;
+    }
+    .search-wrap:focus-within { border-color: var(--tn-blue); box-shadow: 0 0 0 0.2rem rgba(131,165,152,.15); }
+    .search-input-row { position: relative; }
+    .search-wrap #expr-input {
+      padding-right: 100px; width: 100%;
+      border: none; border-radius: 0; box-shadow: none !important;
+    }
+    .search-wrap #expr-input:focus { box-shadow: none !important; }
+    .search-inner-btns {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      display: flex; align-items: center; gap: 4px;
+    }
+    #clear-btn {
+      background: none; border: none; color: var(--tn-comment);
+      font-size: 0.9rem; padding: 2px 5px; cursor: pointer; line-height: 1;
+      border-radius: 3px;
+    }
+    #clear-btn:hover { color: var(--tn-red); background: var(--tn-bg-hi); }
+    #clear-btn:disabled { opacity: 0.35; cursor: default; }
+    #search-btn {
+      background: var(--tn-blue); border: none; color: var(--tn-bg-dark);
+      font-size: 0.78rem; font-weight: 600; padding: 4px 10px;
+      border-radius: 4px; cursor: pointer; white-space: nowrap;
+    }
+    #search-btn:hover { background: #6aaf9f; }
+    #search-btn:disabled { opacity: 0.55; cursor: default; }
+
+    /* ── Forms ────────────────────────────────────────────────────────────── */
+    .form-control, .form-select {
+      background-color: var(--tn-bg-hi); border-color: var(--tn-bg-hi2); color: var(--tn-fg);
+    }
+    .form-control:focus, .form-select:focus {
+      background-color: var(--tn-bg-hi); border-color: var(--tn-blue); color: var(--tn-fg);
+      box-shadow: 0 0 0 0.2rem rgba(122,162,247,.2);
+    }
+    .form-control::placeholder { color: var(--tn-comment); }
+    .form-check-input { background-color: var(--tn-bg-hi); border-color: var(--tn-bg-hi2); }
+    .form-check-input:checked { background-color: var(--tn-blue); border-color: var(--tn-blue); }
+    .form-check-input:indeterminate { background-color: var(--tn-blue); border-color: var(--tn-blue); }
+    .form-check-label { color: var(--tn-fg-dim); }
+    .filter-count { font-size: .75em; opacity: .55; font-weight: normal; }
+    .input-group-text { background-color: var(--tn-bg-hi); border-color: var(--tn-bg-hi2); color: var(--tn-fg-dim); }
+
+    /* ── Buttons ──────────────────────────────────────────────────────────── */
+    .btn-primary   { background-color: var(--tn-blue);   border-color: var(--tn-blue);   color: var(--tn-bg-dark); }
+    .btn-primary:hover { background-color: #5d8ef0; border-color: #5d8ef0; color: var(--tn-bg-dark); }
+    .btn-primary:disabled { background-color: var(--tn-blue); border-color: var(--tn-blue); opacity: 0.5; color: var(--tn-bg-dark); }
+    .btn-secondary { background-color: var(--tn-bg-hi2); border-color: var(--tn-bg-hi2); color: var(--tn-fg-dim); }
+    .btn-secondary:hover { background-color: #4a5480; border-color: #4a5480; color: var(--tn-fg); }
+    .btn-danger    { background-color: var(--tn-red);    border-color: var(--tn-red);    color: var(--tn-bg-dark); }
+    .btn-danger:hover { background-color: #e5556d; border-color: #e5556d; }
+    .btn-outline-primary { color: var(--tn-blue); border-color: var(--tn-blue); background: transparent; }
+    .btn-outline-primary:hover { background-color: var(--tn-blue); color: var(--tn-bg-dark); }
+    .btn-outline-secondary { color: var(--tn-fg-dim); border-color: var(--tn-bg-hi2); background: transparent; }
+    .btn-outline-secondary:hover { background-color: var(--tn-bg-hi); color: var(--tn-fg); border-color: var(--tn-comment); }
+
+    /* ── Table (party-scroll uses small table internally) ─────────────────── */
+    .table { color: var(--tn-fg); border-color: var(--tn-bg-hi2); }
+
+    /* ── Badges ───────────────────────────────────────────────────────────── */
+    .badge-senate, .bg-primary   { background-color: var(--parl-senate) !important; color: #f5e6e5 !important; }
+    .badge-house,  .bg-success   { background-color: var(--parl-house)  !important; color: #e3efe6 !important; }
+    .bg-secondary                { background-color: var(--tn-bg-hi2) !important; color: var(--tn-fg-dim)  !important; }
+    .bg-info                     { background-color: var(--tn-teal)   !important; color: var(--tn-bg-dark) !important; }
+    .bg-warning                  { background-color: var(--tn-yellow) !important; color: var(--tn-bg-dark) !important; }
+    .bg-danger                   { background-color: var(--tn-red)    !important; color: var(--tn-bg-dark) !important; }
+    .bg-light                    { background-color: var(--tn-bg-hi)  !important; }
+    .text-dark                   { color: var(--tn-bg-dark) !important; }
+    .border                      { border-color: var(--tn-bg-hi2) !important; }
+
+    /* ── Pagination ───────────────────────────────────────────────────────── */
+    .pagination { flex-wrap: wrap; }
+    .page-link   { color: var(--tn-blue); background-color: var(--tn-bg); border-color: var(--tn-bg-hi2); }
+    .page-link:hover { background-color: var(--tn-bg-hi); color: var(--tn-blue); }
+    .page-item.active .page-link  { background-color: var(--tn-blue); border-color: var(--tn-blue); color: var(--tn-bg-dark); }
+    .page-item.disabled .page-link { color: var(--tn-comment); background-color: var(--tn-bg); }
+
+    /* ── Alert ────────────────────────────────────────────────────────────── */
+    .alert-danger { background-color: #2d1f24; border-color: var(--tn-red); color: var(--tn-red); }
+
+    /* ── Party / sidebar controls ────────────────────────────────────────── */
+    .party-scroll {
+    }
+    .party-group-header {
+      display: flex; align-items: center; gap: 4px;
+      cursor: pointer; user-select: none; padding: 2px 0;
+    }
+    .party-group-header:hover { background: var(--tn-bg-hi); border-radius: 3px; }
+    .party-group-toggle {
+      width: 14px; height: 14px; flex-shrink: 0;
+      background: none; border: none; padding: 0; cursor: pointer;
+      font-size: 0; display: flex; align-items: center; justify-content: center;
+      transition: transform 0.15s;
+    }
+    .party-group-toggle::before {
+      content: "";
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+      border-left: 6px solid var(--tn-fg-dim);
+      opacity: 0.55;
+    }
+    .party-group-toggle.open { transform: rotate(90deg); }
+    .party-group-items { padding-left: 10px; }
+    .party-group-items.d-none { display: none !important; }
+
+    /* ── Results ──────────────────────────────────────────────────────────── */
+    #query-display {
+      font-family: monospace; font-size: 1.05rem; font-weight: 600;
+      color: var(--tn-fg); margin-bottom: 6px;
+      word-break: break-all;
+    }
+    .stats-bar { font-size: 0.82rem; color: var(--tn-comment); margin-bottom: 8px; }
+    .result-detail {
+      background: var(--tn-bg-hi); padding: 12px 16px;
+      border-left: 3px solid var(--tn-blue); font-size: 0.85rem;
+    }
+    .result-detail .ctx-line { color: var(--tn-comment); font-style: italic; margin-bottom: 2px; }
+    .result-detail .body-full { white-space: pre-wrap; word-break: break-word; color: var(--tn-fg); }
+    .expand-btn {
+      cursor: pointer; color: var(--tn-blue); background: none;
+      border: none; padding: 0; font-size: 0.8rem;
+    }
+    .expand-btn:hover { text-decoration: underline; }
+    mark { background: var(--tn-yellow); color: var(--tn-bg-dark); padding: 0 1px; border-radius: 2px; }
+
+    /* ── Alias container ──────────────────────────────────────────────────── */
+    #alias-container { background-color: var(--tn-bg-hi) !important; border-color: var(--tn-bg-hi2) !important; }
+    .alias-group { margin-bottom: 10px; }
+    .alias-group:last-child { margin-bottom: 0; }
+    .alias-group-label {
+      font-size: 0.72rem; font-family: monospace; color: var(--tn-comment);
+      margin-bottom: 5px;
+    }
+    .alias-group-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+    /* ── Combined expression ──────────────────────────────────────────────── */
+    #expr-combined {
+      font-size: 0.75rem; font-family: monospace; user-select: none;
+      background: var(--tn-bg-hi); border-top: 1px solid var(--tn-bg-hi2);
+      padding: 4px 12px; color: var(--tn-comment);
+      display: flex; flex-direction: column; gap: 1px;
+    }
+    .combined-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px; }
+    .combined-term { color: var(--tn-fg-dim); margin-right: 2px; }
+    .combined-or   { color: var(--tn-comment); }
+    .combined-alias { color: var(--tn-teal); }
+
+
+    /* ── Scrollbars ───────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--tn-bg-dark); }
+    ::-webkit-scrollbar-thumb { background: var(--tn-bg-hi2); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--tn-comment); }
+    * { scrollbar-color: var(--tn-bg-hi2) var(--tn-bg-dark); scrollbar-width: thin; }
+
+    /* ── Chart ────────────────────────────────────────────────────────────── */
+    #chart-container { position: relative; height: 147px; margin-bottom: 12px; }
+    #chart-legend {
+      position: absolute; top: 4px; left: 48px; z-index: 1;
+      display: flex; flex-direction: column; gap: 2px; pointer-events: none;
+    }
+    .chart-legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.72rem; color: var(--tn-comment); }
+    .chart-legend-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+    #chart-container.d-none { display: none !important; }
+
+    /* ── Maps ──────────────────────────────────────────────────────────────── */
+    /* MAPS (disabled): choropleth map styles — re-enable when maps are restored
+    #maps-container { margin-bottom: 12px; }
+    #maps-container.d-none { display: none !important; }
+    .map-wrap { flex: 1; min-width: 260px; }
+    .map-wrap svg { width: 100%; height: 260px; background: var(--tn-bg-dark); border-radius: 4px; display: block; }
+    .map-wrap path { stroke: #504945; stroke-width: 0.4; transition: opacity 0.1s; }
+    .map-wrap path:hover { opacity: 0.75; cursor: default; }
+    #map-tooltip {
+      position: fixed; pointer-events: none; display: none; z-index: 1000;
+      background: var(--tn-bg-hi2); color: var(--tn-fg); padding: 3px 8px;
+      border-radius: 4px; font-size: 0.78rem; white-space: nowrap;
+    }
+    */
+
+    /* ── Sort bar ─────────────────────────────────────────────────────────── */
+    .sort-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+    #cards-header {
+      position: sticky; top: 0; z-index: 10;
+      background: var(--tn-bg); padding: 8px 0 0;
+    }
+    #query-display { font-size: 0.9rem; word-break: break-all; margin-bottom: 6px; }
+    body.searched #results-list-col { padding-top: 0; }
+    .sort-pill {
+      background: var(--tn-bg-hi); border: 1px solid var(--tn-bg-hi2);
+      color: var(--tn-fg-dim); border-radius: 20px; padding: 1px 7px;
+      font-size: 0.72rem;
+      font-size: 0.78rem; cursor: pointer; white-space: nowrap;
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+    }
+    .sort-pill:hover { background: var(--tn-bg-hi2); color: var(--tn-fg); }
+    .sort-pill.sort-active {
+      background: var(--tn-blue); border-color: var(--tn-blue); color: var(--tn-bg-dark);
+    }
+
+    /* ── Result cards ─────────────────────────────────────────────────────── */
+    .result-card {
+      background: var(--tn-bg); border: 1px solid var(--tn-bg-hi2); border-radius: 6px;
+      padding: 11px 14px; margin-bottom: 7px; transition: border-color 0.15s;
+    }
+    .result-card:hover { border-color: var(--tn-comment); }
+    .result-card-header {
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: 8px; margin-bottom: 3px;
+    }
+    .result-card-speaker { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+    .speaker-name { font-weight: 600; color: var(--tn-fg); font-size: 0.9rem; }
+    .result-date { font-size: 0.78rem; color: var(--tn-comment); white-space: nowrap; flex-shrink: 0; }
+    .result-card-meta {
+      display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+      font-size: 0.78rem; color: var(--tn-fg-dim); margin-bottom: 7px;
+    }
+    .meta-sep { color: var(--tn-bg-hi2); }
+    .result-card-body { font-size: 0.84rem; color: var(--tn-fg-dim); line-height: 1.5; }
+    .result-card-body .preview-text { margin: 0 0 4px; }
+    .result-card-footer {
+      display: flex; justify-content: flex-end; margin-top: 4px;
+    }
+    .result-card-detail { margin-top: 10px; }
+
+    /* ── Loading ──────────────────────────────────────────────────────────── */
+    @keyframes loading-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+    .loading-pulse { animation: loading-pulse 1.2s ease-in-out infinite; }
+    .loading-glow {
+      border-color: var(--tn-red) !important; border-width: 2px !important;
+      box-shadow: 0 0 0 0.2rem rgba(247,118,142,.2) !important;
+    }
+
+    /* ── Loading lock ─────────────────────────────────────────────────────── */
+    body.app-loading #sidebar,
+    body.app-loading #sort-bar,
+    body.app-loading .chamber-row,
+    body.app-loading #alias-container {
+      pointer-events: none;
+      opacity: 0.45;
+      transition: opacity 0.15s;
+    }
+
+    /* ── Progress bar ─────────────────────────────────────────────────────── */
+    #progress-bar-track {
+      position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 9999;
+      background: transparent; pointer-events: none;
+    }
+    @keyframes progress-slide {
+      0%   { left: -40%; width: 40%; }
+      60%  { left: 40%;  width: 50%; }
+      100% { left: 110%; width: 40%; }
+    }
+    #progress-bar {
+      position: absolute; top: 0; height: 100%;
+      background: var(--tn-blue);
+      animation: progress-slide 1.4s ease-in-out infinite;
+      display: none;
+      border-radius: 0 2px 2px 0;
+    }
+
+    /* ── Searched state ────────────────────────────────────────────────────── */
+    #landing-hero {
+      display: none;
+      position: fixed; inset: 0;
+      flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px; padding: 32px;
+      background: var(--tn-bg);
+      z-index: 100;
+    }
+    #landing-title { font-size: 2rem; font-weight: 700; margin: 0; }
+    #landing-sub   { font-size: 0.9rem; opacity: 0.6; margin: 0; }
+
+    #search-pin {
+      display: none; flex: 1; min-width: 0; max-width: 540px;
+    }
+    body.searched #search-pin { display: flex; align-items: center; }
+    body.searched #corpus-range-label { display: none !important; }
+    body.searched #header-stats       { display: none !important; }
+    #search-pin-inner {
+      display: flex; align-items: center; gap: 6px; width: 100%;
+    }
+    #pin-input { flex: 1; min-width: 0; font-size: 0.85rem; }
+    #pin-clear-btn {
+      background: none; border: none; color: var(--tn-comment);
+      font-size: 0.9rem; padding: 2px 5px; cursor: pointer; line-height: 1;
+      border-radius: 3px; flex-shrink: 0;
+    }
+    #pin-clear-btn:hover { color: var(--tn-red); background: var(--tn-bg-hi); }
+    #pin-search-btn {
+      background: var(--tn-blue); border: none; color: var(--tn-bg-dark);
+      font-size: 0.78rem; font-weight: 600; padding: 4px 10px;
+      border-radius: 4px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+    }
+    #pin-search-btn:hover { background: #6aaf9f; }
+    #pin-chamber-row { display: none; }
+
+    /* ── Sidebar tab + inner ──────────────────────────────────────────────── */
+    #sidebar-tab {
+      width: 28px; flex-shrink: 0;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding-top: 14px; cursor: pointer;
+      border-right: 1px solid var(--tn-bg-hi2);
+    }
+    #sidebar-tab:hover { background: var(--tn-bg-hi); }
+    #sidebar-tab span {
+      writing-mode: vertical-rl; transform: rotate(180deg);
+      font-size: 0.68rem; letter-spacing: 0.13em; text-transform: uppercase;
+      font-weight: 600; color: var(--tn-comment); user-select: none;
+    }
+    #sidebar-inner {
+      flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
+      max-height: 100vh; padding: 12px 16px;
+    }
+    body.searched #sidebar-inner { max-height: 100%; }
+    @media (max-width: 519px) {
+      #sidebar-tab { display: none; }
+      #sidebar-inner { overflow-y: auto; }
+    }
+
+    /* ── Email-pane layout (desktop, searched state) ──────────────────────── */
+    @media (min-width: 520px) {
+      body.searched {
+        height: 100vh; overflow: hidden;
+        display: flex; flex-direction: column;
+      }
+      body.searched .container-fluid {
+        flex: 1; min-height: 0; overflow: hidden;
+        display: flex; flex-direction: column;
+      }
+      body.searched #app-row {
+        flex: 1; min-height: 0;
+        grid-template-rows: auto 1fr;
+        align-items: stretch !important;
+      }
+      body.searched #sidebar {
+        position: static !important; max-height: none !important; overflow-y: hidden;
+      }
+      body.searched #main-top { overflow-y: auto; min-height: 0; }
+      body.searched #main-results {
+        display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+      }
+      body.searched #reading-pane { flex: 1; min-height: 0; overflow-y: auto; }
+      body.searched #results-list-col { overflow-y: auto; min-height: 0; }
+    }
+
+    #results-list-col {
+      border-right: 1px solid var(--tn-bg-hi2);
+      overflow-y: auto; padding: 8px 12px;
+    }
+    #reading-pane {
+      overflow-y: auto; padding: 16px 20px 70px;
+    }
+    .ctx-expand-btn {
+      text-align: center; padding: 6px; color: var(--tn-blue);
+      font-size: 0.8rem; cursor: pointer; opacity: 0.7; user-select: none;
+    }
+    .ctx-expand-btn:hover { opacity: 1; text-decoration: underline; }
+    #sidebar-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.35); z-index: 1039;
+    }
+    #sidebar-backdrop.open { display: block; }
+    #reading-pane-placeholder {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; min-height: 200px;
+      color: var(--tn-comment); font-size: 0.9rem;
+    }
+    #reading-pane-header {
+      padding-bottom: 12px; margin-bottom: 12px;
+      border-bottom: 1px solid var(--tn-bg-hi2);
+    }
+    .result-card { cursor: pointer; }
+    .result-card.selected {
+      background: var(--tn-bg-hi) !important; border-color: var(--tn-blue) !important;
+    }
+
+    /* ── Context modal ────────────────────────────────────────────────────── */
+    #ctx-modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.65); z-index: 1050;
+      align-items: center; justify-content: center;
+    }
+    #ctx-modal-overlay.open { display: flex; }
+    #ctx-modal {
+      background: var(--tn-bg-dark); border: 1px solid var(--tn-comment);
+      border-radius: 6px; width: min(820px, 96vw); max-height: 88vh;
+      display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    #ctx-modal-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 14px; border-bottom: 1px solid var(--tn-comment); flex-shrink: 0;
+    }
+    #ctx-modal-body { overflow-y: auto; padding: 8px 10px; flex: 1; }
+    .ctx-speech {
+      padding: 7px 10px; border-radius: 4px; margin-bottom: 4px;
+      border-left: 3px solid transparent; font-size: 0.83rem;
+    }
+    .ctx-speech.ctx-target {
+      background: var(--tn-selection); border-left-color: var(--tn-cyan);
+    }
+    .ctx-speech-meta {
+      font-size: 0.77rem; color: var(--tn-fg-dim); margin-bottom: 3px;
+    }
+    .ctx-speech-body { color: var(--tn-fg); line-height: 1.45; }
+    .turn-time   { font-size: 0.72rem; color: var(--tn-comment); margin-right: 6px; }
+    .time-est    { opacity: 0.65; font-style: italic; }
+  </style>
+</head>
+<body>
+<div id="progress-bar-track"><div id="progress-bar"></div></div>
+<div id="trial-banner"><div id="trial-banner-inner"></div></div>
+<div id="header-bar" class="py-2 px-4 mb-0 d-flex align-items-center gap-3">
+  <svg onclick="resetAll()" viewBox="177 0 331 360" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="width:1.095em;height:1.35em;flex-shrink:0;cursor:pointer;opacity:0.85;margin-right:-0.5em" title="Reset to default view">
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"  opacity="0.35" d="M 191 323 C 230 305 268 274 299 252 C 318 239 333 223 342 211"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="13" opacity="0.65" d="M 189 322 C 228 304 265 272 297 251 C 316 238 331 221 341 210"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="20" opacity="0.92" d="M 187 321 C 225 302 263 271 295 250 C 315 237 330 220 340 209"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"  opacity="0.35" d="M 342 211 C 352 222 369 238 390 255 C 420 277 455 299 497 323"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="13" opacity="0.65" d="M 341 210 C 351 221 368 237 389 254 C 419 276 454 298 496 322"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="20" opacity="0.92" d="M 340 209 C 350 220 367 236 388 253 C 418 275 453 297 495 321"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"  opacity="0.35" d="M 343 211 C 342 185 344 158 342 132 C 341 108 343 85 342 69"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="13" opacity="0.65" d="M 341 210 C 340 184 342 157 341 131 C 340 107 341 84 340 68"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="20" opacity="0.92" d="M 340 209 C 339 183 341 156 340 130 C 339 106 340 83 339 67"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"  opacity="0.35" d="M 343 70 C 355 68 370 67 385 68 C 393 68 399 69 404 70"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="13" opacity="0.65" d="M 341 69 C 353 67 368 66 383 67 C 391 67 397 68 402 69"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="20" opacity="0.92" d="M 340 67 C 352 65 367 64 382 65 C 390 65 396 66 401 68"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"  opacity="0.35" d="M 404 70 C 405 80 404 92 405 103 C 405 106 404 108 404 110"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="13" opacity="0.65" d="M 402 69 C 403 79 402 91 403 102 C 403 105 402 107 403 109"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="20" opacity="0.92" d="M 401 68 C 402 78 401 90 402 101 C 402 104 401 107 401 110"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"  opacity="0.35" d="M 404 110 C 393 111 378 111 363 110 C 353 110 345 110 342 110"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="13" opacity="0.65" d="M 403 109 C 392 110 377 110 362 109 C 352 109 344 109 341 109"/>
+    <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="20" opacity="0.92" d="M 401 110 C 390 111 375 111 360 110 C 350 110 342 110 340 110"/>
+  </svg>
+  <strong class="fs-5" onclick="resetAll()" style="cursor:pointer" title="Reset to default view">HANSARD SEARCH</strong>
+  <span id="header-version" class="small text-secondary" style="opacity:0.5">v0.1</span>
+  <span id="corpus-range-label" class="small text-secondary" style="opacity:0.65">Australian Federal Parliament · House &amp; Senate · 1998–2026</span>
+  <span id="header-stats" class="small text-secondary"></span>
+  <div id="search-pin">
+    <div id="search-pin-inner">
+      <input type="text" id="pin-input" class="form-control form-control-sm" placeholder="Search…" autocomplete="off" />
+      <button id="pin-clear-btn" title="Clear">✕</button>
+      <button id="pin-search-btn">Search</button>
+    </div>
+  </div>
+  <button id="mobile-filter-btn" onclick="openMobileSidebar()" class="small ms-auto me-2" style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:5px;color:var(--tn-fg);cursor:pointer;padding:4px 10px;font-size:0.82rem;align-items:center;gap:5px;" title="Filters">⚙ Filters</button>
+  <button id="theme-toggle" onclick="toggleTheme()" class="small me-3" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75" title="Toggle light/dark mode"></button>
+  <a href="/help" class="small me-3" style="color:var(--tn-comment);text-decoration:none;opacity:0.75" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Help</a>
+  <button onclick="doLogout()" class="small me-2" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Sign out</button>
+</div>
+
+
+<div class="container-fluid">
+  <div id="app-row" class="row g-0">
+
+    <!-- ① Search + chart — first in DOM (top on mobile, right-top on desktop) -->
+    <div id="main-top" class="p-3">
+
+      <!-- Search bar -->
+      <div class="mb-2">
+        <div class="search-wrap">
+          <div class="search-input-row">
+            <input type="text" id="expr-input" class="form-control form-control-lg"
+              placeholder="Search terms (optional) — e.g. climate change  or  'renewables' | 'clean energy'" />
+            <div class="search-inner-btns">
+              <button id="clear-btn" onclick="clearSearch()" title="Clear search">✕</button>
+              <button id="search-btn" onclick="doSearch(1)">Search</button>
+            </div>
+          </div>
+          <div id="expr-combined" class="d-none"></div>
+        </div>
+        <div class="d-flex align-items-center gap-3 mt-1">
+          <div class="small text-muted">
+            Boolean syntax: quoted terms, AND (&amp;), OR (|), parentheses.
+            Example: <code class="example-query" title="Click to run this search" onclick="runExampleSearch(&quot;('climate change' | agriculture) &amp; 'fuel subsidies'&quot;)">('climate change' | agriculture) &amp; 'fuel subsidies'</code>
+          </div>
+          <div class="form-check form-switch mb-0 flex-shrink-0">
+            <input class="form-check-input" type="checkbox" id="f-case-sensitive" />
+            <label class="form-check-label small text-muted" for="f-case-sensitive">Case sensitive</label>
+          </div>
+        </div>
+        <!-- Related terms -->
+        <div id="alias-container" class="d-none mt-2 p-2 border rounded">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small fw-semibold text-muted">Related — click to add to expression</span>
+            <button class="btn-close btn-sm" style="font-size:0.6rem" onclick="closeAliases()"></button>
+          </div>
+          <div id="alias-groups"></div>
+        </div>
+      </div>
+
+      <!-- Chamber radio -->
+      <div class="chamber-row mb-3 d-flex gap-3 align-items-center flex-wrap">
+        <strong class="me-1">Chamber:</strong>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="f-chamber" id="ch-both" value="both" checked />
+          <label class="form-check-label" for="ch-both">Both</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="f-chamber" id="ch-senate" value="senate" />
+          <label class="form-check-label" for="ch-senate">Senate <span class="filter-count"></span></label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="f-chamber" id="ch-house" value="house" />
+          <label class="form-check-label" for="ch-house">House <span class="filter-count"></span></label>
+        </div>
+        <div class="ms-auto d-flex align-items-center gap-1">
+          <label class="small text-muted me-1">Per page:</label>
+          <select id="page-size" class="form-select form-select-sm" style="width:80px">
+            <option value="20" selected>20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Error alert -->
+      <div id="error-alert" class="alert alert-danger d-none py-2 mb-2" role="alert"></div>
+
+      <!-- Stats bar -->
+      <div id="stats-bar" class="stats-bar"></div>
+
+      <!-- Chart -->
+      <div id="chart-container" class="d-none">
+        <div id="chart-legend">
+          <div class="chart-legend-item"><span class="chart-legend-swatch" style="background:rgba(158,61,31,0.85)"></span>Senate</div>
+          <div class="chart-legend-item"><span class="chart-legend-swatch" style="background:rgba(78,107,74,0.85)"></span>House</div>
+        </div>
+        <canvas id="timeseries-chart"></canvas>
+      </div>
+
+      <!-- MAPS (disabled): two choropleth maps below the chart showing Senate results
+           by state and House results by electorate. GeoJSON files:
+             static/aus_states.geojson     — 8 features, STATE_NAME property
+             static/aus_electorates.geojson — 151 features, electorateName property
+           Known issue before disabling: Bean electorate geometry includes Norfolk Island
+           (168°E), dragging fitExtent far into the Pacific. Fix was to use a fixed mainland
+           bounding box (_AUS_BBOX) for the projection instead of fitting to the feature
+           collection. SVG sizing also needed requestAnimationFrame + explicit width/height
+           attrs so the D3 coordinate space matched the CSS layout after d-none removal.
+      <div id="maps-container" class="d-none">
+        <div class="d-flex gap-3" style="flex-wrap:wrap">
+          <div class="map-wrap">
+            <div class="small text-muted mb-1 text-center">Senate — results by state</div>
+            <svg id="senate-map"></svg>
+          </div>
+          <div class="map-wrap">
+            <div class="small text-muted mb-1 text-center">House — results by electorate</div>
+            <svg id="house-map"></svg>
+          </div>
+        </div>
+      </div>
+      <div id="map-tooltip"></div>
+      -->
+
+    </div><!-- /main-top -->
+
+    <!-- ② Sidebar filters — second in DOM (after chart on mobile, left col on desktop) -->
+    <div id="sidebar">
+      <div id="sidebar-tab" onclick="toggleSidebar()" title="Toggle filters"><span>Filters</span></div>
+      <div id="sidebar-inner">
+      <h6 class="text-uppercase text-muted mb-3" style="font-size:0.75rem;letter-spacing:.05em">Filters</h6>
+
+      <!-- Date range -->
+      <div class="mb-3">
+        <button class="filter-section-trigger" onclick="openFilter('fsb-date','Date range')">Date range</button>
+        <label class="form-label fw-semibold mb-1 filter-section-header">Date range</label>
+        <div class="filter-section-body" id="fsb-date">
+          <div id="date-ranges-container"></div>
+          <button class="btn btn-link btn-sm p-0 small text-muted mt-1" onclick="addDateRange()">+ Add range</button>
+        </div>
+      </div>
+
+      <!-- Parliament -->
+      <div class="mb-3">
+        <button class="filter-section-trigger" onclick="openFilter('fsb-parl','Parliament')">Parliament</button>
+        <div class="d-flex justify-content-between align-items-center mb-1 filter-section-header">
+          <label class="form-label fw-semibold mb-0">Parliament</label>
+          <button class="btn btn-link btn-sm p-0 small text-muted"
+                  onclick="_clearPanel('#parliament-filter-box', ['parl-check'])">Clear</button>
+        </div>
+        <div class="filter-section-body" id="fsb-parl">
+          <div id="parliament-filter-box" class="small"></div>
+        </div>
+      </div>
+
+      <!-- Party -->
+      <div class="mb-3">
+        <button class="filter-section-trigger" onclick="openFilter('fsb-party','Party')">Party</button>
+        <div class="d-flex justify-content-between align-items-center mb-1 filter-section-header">
+          <label class="form-label fw-semibold mb-0">Party</label>
+          <div class="d-flex gap-2">
+            <button class="btn btn-link btn-sm p-0 small text-muted"
+                    onclick="_clearPanel('#party-scroll', ['group-check', 'party-check'])">Clear</button>
+            <button class="btn btn-link btn-sm p-0 small text-muted"
+                    onclick="_toggleExpandAll('#party-scroll', this)">Expand all</button>
+          </div>
+        </div>
+        <div class="filter-section-body" id="fsb-party">
+          <div id="party-scroll" class="party-scroll small"></div>
+        </div>
+      </div>
+
+      <!-- Gender -->
+      <div class="mb-3">
+        <button class="filter-section-trigger" onclick="openFilter('fsb-gender','Gender')">Gender</button>
+        <label class="form-label fw-semibold mb-1 filter-section-header">Gender</label>
+        <div class="filter-section-body" id="fsb-gender">
+          <div class="d-flex gap-3">
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="f-gender" id="g-any" value="" checked />
+              <label class="form-check-label" for="g-any">Any</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="f-gender" id="g-m" value="male" />
+              <label class="form-check-label" for="g-m">Male <span class="filter-count"></span></label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="f-gender" id="g-f" value="female" />
+              <label class="form-check-label" for="g-f">Female <span class="filter-count"></span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- State (Senators) -->
+      <div class="mb-3">
+        <button class="filter-section-trigger" onclick="openFilter('fsb-senators','State (Senators)')">State (Senators)</button>
+        <div class="d-flex justify-content-between align-items-center mb-1 filter-section-header">
+          <label class="form-label fw-semibold mb-0">State (Senators)</label>
+          <div class="d-flex gap-2">
+            <button class="btn btn-link btn-sm p-0 small text-muted"
+                    onclick="_clearPanel('#state-senator-box', ['senator-group', 'senator-check'])">Clear</button>
+            <button class="btn btn-link btn-sm p-0 small text-muted"
+                    onclick="_toggleExpandAll('#state-senator-box', this)">Expand all</button>
+          </div>
+        </div>
+        <div class="filter-section-body" id="fsb-senators">
+          <div id="state-senator-box"></div>
+        </div>
+      </div>
+
+      <!-- Electorate (MPs) -->
+      <div class="mb-3">
+        <button class="filter-section-trigger" onclick="openFilter('fsb-electorate','Electorate (MPs)')">Electorate (MPs)</button>
+        <div class="d-flex justify-content-between align-items-center mb-1 filter-section-header">
+          <label class="form-label fw-semibold mb-0">Electorate (MPs)</label>
+          <div class="d-flex gap-2">
+            <button class="btn btn-link btn-sm p-0 small text-muted"
+                    onclick="_clearPanel('#electorate-mp-box', ['mp-state-group', 'mp-divtype-group', 'mp-elec-group', 'mp-check'])">Clear</button>
+            <button class="btn btn-link btn-sm p-0 small text-muted"
+                    onclick="_toggleExpandAll('#electorate-mp-box', this)">Expand all</button>
+          </div>
+        </div>
+        <div class="filter-section-body" id="fsb-electorate">
+          <div class="d-flex flex-wrap gap-1 mb-1">
+            <div class="form-check form-check-inline mb-0">
+              <input class="form-check-input region-type-chk" type="checkbox" id="region-inner-metro" data-divtype="Inner Metropolitan" />
+              <label class="form-check-label small" for="region-inner-metro">Inner Metro <span class="filter-count"></span></label>
+            </div>
+            <div class="form-check form-check-inline mb-0">
+              <input class="form-check-input region-type-chk" type="checkbox" id="region-outer-metro" data-divtype="Outer Metropolitan" />
+              <label class="form-check-label small" for="region-outer-metro">Outer Metro <span class="filter-count"></span></label>
+            </div>
+            <div class="form-check form-check-inline mb-0">
+              <input class="form-check-input region-type-chk" type="checkbox" id="region-provincial" data-divtype="Provincial" />
+              <label class="form-check-label small" for="region-provincial">Provincial <span class="filter-count"></span></label>
+            </div>
+            <div class="form-check form-check-inline mb-0">
+              <input class="form-check-input region-type-chk" type="checkbox" id="region-rural" data-divtype="Rural" />
+              <label class="form-check-label small" for="region-rural">Rural <span class="filter-count"></span></label>
+            </div>
+          </div>
+          <input type="text" id="elec-search" class="form-control form-control-sm mb-1"
+                 placeholder="Filter by electorate…" autocomplete="off" />
+          <div id="electorate-mp-box"></div>
+        </div>
+      </div>
+
+
+      <!-- Row type -->
+      <div class="mb-3">
+        <button class="filter-section-trigger" onclick="openFilter('fsb-rowtype','Row type')">Row type</button>
+        <label class="form-label fw-semibold mb-1 filter-section-header">Row type</label>
+        <div class="filter-section-body" id="fsb-rowtype">
+          <div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="f-rowtype" id="rt-both" value="" checked />
+              <label class="form-check-label" for="rt-both">Both</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="f-rowtype" id="rt-speech" value="speech" />
+              <label class="form-check-label" for="rt-speech">Speech only <span class="filter-count"></span></label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="f-rowtype" id="rt-exchange" value="exchange" />
+              <label class="form-check-label" for="rt-exchange">Exchange only <span class="filter-count"></span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Speech flags -->
+      <div class="mb-3">
+        <button class="filter-section-trigger" onclick="openFilter('fsb-flags','Speech flags')">Speech flags</button>
+        <label class="form-label fw-semibold mb-1 filter-section-header">Speech flags</label>
+        <div class="filter-section-body" id="fsb-flags">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="f-first-speech" />
+            <label class="form-check-label" for="f-first-speech">First speech only <span class="filter-count"></span></label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="f-question" />
+            <label class="form-check-label" for="f-question">Questions only <span class="filter-count"></span></label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="f-answer" />
+            <label class="form-check-label" for="f-answer">Answers only <span class="filter-count"></span></label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="f-no-interject" />
+            <label class="form-check-label" for="f-no-interject">No interjections <span class="filter-count"></span></label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="f-main-chamber" />
+            <label class="form-check-label" for="f-main-chamber">Main chamber only (House) <span class="filter-count"></span></label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="f-fed-chamber" />
+            <label class="form-check-label" for="f-fed-chamber">Federation Chamber only (House) <span class="filter-count"></span></label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="f-written" />
+            <label class="form-check-label" for="f-written">Written questions only <span class="filter-count"></span></label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="f-embedded-interject" />
+            <label class="form-check-label" for="f-embedded-interject">Has embedded interjection <span class="filter-count"></span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-grid">
+        <button class="btn btn-outline-secondary btn-sm" onclick="resetFilters()">Reset filters</button>
+      </div>
+
+      <!-- Mobile drawer footer (hidden on desktop via CSS) -->
+      <div id="sidebar-drawer-footer">
+        <button onclick="resetFilters(); closeMobileSidebar()">Reset filters</button>
+        <button onclick="closeMobileSidebar()">Done</button>
+      </div>
+      </div><!-- /sidebar-inner -->
+    </div><!-- /sidebar -->
+
+    <!-- ③ Cards column — spans full height alongside chart+reading pane -->
+    <div id="results-list-col">
+
+      <div id="cards-header">
+        <div id="query-display" class="d-none"></div>
+        <!-- Sort bar -->
+        <div id="sort-bar" class="sort-bar mb-2">
+          <span style="font-size:0.72rem" class="text-muted me-1">Sort:</span>
+          <button class="sort-pill sort-active" data-sort="date"    onclick="sortByCol('date')">Date ▼</button>
+          <button class="sort-pill"             data-sort="name"    onclick="sortByCol('name')">Speaker</button>
+          <button class="sort-pill"             data-sort="party"   onclick="sortByCol('party')">Party</button>
+          <button class="sort-pill"             data-sort="chamber" onclick="sortByCol('chamber')">Chamber</button>
+          <button id="download-btn" class="sort-pill ms-auto" onclick="downloadCSV()" title="Download first 10 entries as CSV">↓ CSV (10)</button>
+        </div>
+      </div>
+
+      <!-- Results list -->
+      <div id="results-list"></div>
+
+      <!-- Empty state -->
+      <div id="no-results" class="text-center text-muted py-5 d-none">
+        <p>No results found.</p>
+      </div>
+
+      <!-- Pagination -->
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2">
+        <nav><ul id="pagination" class="pagination pagination-sm mb-0"></ul></nav>
+      </div>
+
+    </div><!-- /results-list-col -->
+
+    <!-- ④ Reading pane column (chart above, speech context below) -->
+    <div id="main-results">
+      <button id="mobile-back-btn" onclick="closeMobileReadingPane()">← Back to results</button>
+      <div id="reading-pane">
+        <div id="reading-pane-placeholder">← Select a speech to view day context</div>
+        <div id="reading-pane-header" style="display:none"></div>
+        <div id="reading-pane-body"></div>
+      </div>
+    </div><!-- /main-results -->
+  </div><!-- /row -->
+</div><!-- /container -->
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let _lastSearch = null;        // { expression, chamber, page, page_size, filters }
+let _expanded = {};            // matchId -> bool
+let _corpusSeeds = [];         // top co-occurring terms from last search result
+let _requestController = null; // AbortController for in-flight search request
+let _currentResults = [];      // results for current page (for client-side sort)
+let _sortCol = null;           // active sort column key
+let _sortDir = "desc";         // "asc" | "desc"
+let _isLoading = false;        // true while a search request is in flight
+let _selectedAliases = new Map(); // Map<originalTerm, Set<alias>>
+let _lastAliasTerms = new Set();  // terms currently showing recommendation groups
+let _lastFullExpression = '';     // full alias-expanded expression from last search
+let _selectedMatchId = null;      // match_id of currently selected result card
+let _ctxSpeeches   = [];          // all speeches from day_context for current selection
+let _ctxMatchId    = null;        // match_id of speech loaded in reading pane
+let _ctxTargetIdx  = -1;         // index of target speech in _ctxSpeeches
+let _ctxStartIdx   = -1;         // current window start (inclusive)
+let _ctxEndIdx     = -1;         // current window end (inclusive)
+
+// ── Sidebar toggle ──────────────────────────────────────────────────────────────
+function toggleSidebar() {
+  const open = document.getElementById('sidebar').classList.toggle('sidebar-open');
+  document.getElementById('sidebar-backdrop').classList.toggle('open', open);
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('sidebar-open');
+  document.getElementById('sidebar-backdrop').classList.remove('open');
+}
+
+
+// ── Auth ───────────────────────────────────────────────────────────────────────
+function handle401(data) {
+  window.location.href = (data && data.redirect) ? data.redirect : "/login";
+}
+
+async function doLogout() {
+  await fetch("/api/logout", { method: "POST" });
+  window.location.href = "/login";
+}
+
+// ── Debounced auto-search ──────────────────────────────────────────────────────
+let _searchTimeout = null;
+function _exprLooksComplete(expr) {
+  // Simple phrases (no boolean operators) are always valid — they get auto-quoted
+  if (!/[&|!()]/.test(expr)) return true;
+  // Tokenise into TERM / operator tokens and check for consecutive TERMs
+  // (which the parser rejects as a syntax error)
+  const tokens = [];
+  let i = 0;
+  while (i < expr.length) {
+    if (expr[i] === "'" || expr[i] === '"') {
+      const q = expr[i];
+      const end = expr.indexOf(q, i + 1);
+      if (end === -1) return false; // unclosed quote — still typing
+      tokens.push("T");
+      i = end + 1;
+    } else if ("&|!()".includes(expr[i])) {
+      tokens.push(expr[i]);
+      i++;
+    } else if (/\s/.test(expr[i])) {
+      i++;
+    } else {
+      // bare word — consume until delimiter
+      while (i < expr.length && !/[\s'"&|!()]/.test(expr[i])) i++;
+      tokens.push("T");
+    }
+  }
+  // Two consecutive terms with no operator between them → invalid
+  for (let j = 0; j < tokens.length - 1; j++) {
+    if (tokens[j] === "T" && tokens[j + 1] === "T") return false;
+  }
+  return true;
+}
+
+function autoSearch(delay) {
+  clearTimeout(_searchTimeout);
+  const inputEl = document.getElementById("expr-input");
+  let expr = inputEl.value.trim();
+  if (expr && /[&|!()]/.test(expr) && !_exprLooksComplete(expr)) {
+    expr = _autoQuoteExpression(expr);
+    inputEl.value = expr;
+  }
+  if (expr && !_exprLooksComplete(expr)) return;
+  hideError();
+  _searchTimeout = setTimeout(() => doSearch(1), delay || 150);
+}
+
+// ── Trial banner ───────────────────────────────────────────────────────────────
+async function loadTrialBanner() {
+  try {
+    const r = await fetch("/api/me");
+    if (!r.ok) return;
+    const { expires_at } = await r.json();
+    if (!expires_at) return;
+    const msLeft = new Date(expires_at + "Z") - Date.now();
+    const daysLeft = Math.ceil(msLeft / 86400000);
+    const banner = document.getElementById("trial-banner");
+    if (daysLeft <= 0) return; // already expired — handled by server redirect
+    let cls, msg;
+    const dayWord = daysLeft === 1 ? "day" : "days";
+    msg = `Trial access · ${daysLeft} ${dayWord} remaining`;
+    let color, bg, border;
+    if (daysLeft <= 2) {
+      color = "#d3869b"; bg = "rgba(211,134,155,0.18)"; border = "rgba(211,134,155,0.45)";
+    } else if (daysLeft <= 4) {
+      color = "#fabd2f"; bg = "rgba(250,189,47,0.13)";  border = "rgba(250,189,47,0.35)";
+    } else {
+      color = "#d3869b"; bg = "rgba(211,134,155,0.18)"; border = "rgba(211,134,155,0.45)";
+    }
+    const inner = document.getElementById("trial-banner-inner");
+    inner.textContent = msg;
+    inner.style.cssText = `color:${color};background:${bg};border:1px solid ${border};display:inline-block;padding:6px 18px;border-radius:20px;font-size:0.82rem;font-weight:600;`;
+    banner.style.cssText = "display:block;text-align:center;padding:8px 16px;";
+  } catch { /* silent */ }
+}
+
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+function _applyTheme(light) {
+  document.body.classList.toggle("light", light);
+  const btn = document.getElementById("theme-toggle");
+  if (btn) btn.textContent = light ? "☾ Dark" : "☀ Light";
+}
+function toggleTheme() {
+  const isLight = !document.body.classList.contains("light");
+  localStorage.setItem("hansard-theme", isLight ? "light" : "dark");
+  _applyTheme(isLight);
+}
+
+// ── Shareable links ───────────────────────────────────────────────────────────
+function buildShareUrl() {
+  const p = new URLSearchParams();
+  const expr = document.getElementById("expr-input").value.trim();
+  if (expr) p.set("q", expr);
+  const chamber = document.querySelector('input[name="f-chamber"]:checked')?.value || "both";
+  if (chamber !== "both") p.set("chamber", chamber);
+  const ps = parseInt(document.getElementById("page-size").value) || 20;
+  if (ps !== 20) p.set("ps", ps);
+  if (document.getElementById("f-case-sensitive").checked) p.set("cs", "1");
+  if (_sortCol) p.set("sc", _sortCol);
+  if (_sortDir !== "desc") p.set("sd", _sortDir);
+
+  document.querySelectorAll(".date-range-row").forEach(row => {
+    const [from, to] = row.querySelectorAll("input");
+    const fv = from?.value || "", tv = to?.value || "";
+    // Skip if this is just the default full-corpus range (don't pollute the URL)
+    if ((fv || tv) && !(fv === _corpusDateMin && tv === _corpusDateMax))
+      p.append("dr", `${fv},${tv}`);
+  });
+
+  // ── Party groups: encode full group as pgrp=id, partial as individual party= ──
+  const _coveredParties = new Set();
+  document.querySelectorAll('.group-check[data-group]').forEach(grpChk => {
+    if (grpChk.checked && !grpChk.indeterminate) {
+      p.append('pgrp', grpChk.dataset.group);
+      document.querySelectorAll(`.party-check[data-group="${grpChk.dataset.group}"]`)
+        .forEach(c => _coveredParties.add(c.value));
+    }
+  });
+  document.querySelectorAll('.party-check:checked').forEach(el => {
+    if (!_coveredParties.has(el.value)) p.append('party', el.value);
+  });
+
+  // ── Senators: encode full state as sen_state=, else individual nid= ──────
+  const _coveredNids = new Set();
+  document.querySelectorAll('#state-senator-box .party-group[data-geo]').forEach(grpDiv => {
+    const all = [...grpDiv.querySelectorAll('.senator-check')];
+    const checked = all.filter(c => c.checked);
+    if (checked.length === all.length && all.length > 0) {
+      p.append('sen_state', grpDiv.dataset.geo);
+      checked.forEach(c => _coveredNids.add(c.value));
+    }
+  });
+
+  // ── MPs: encode by state → divtype → electorate, fall back to nid= ───────
+  document.querySelectorAll('#electorate-mp-box > .party-group').forEach(stateDiv => {
+    const safeState = stateDiv.querySelector('.mp-state-group')?.id?.replace('mp-state-', '') || '';
+    const geo = Object.keys(_mpsByStateType).find(s => s.replace(/[^a-zA-Z0-9]/g, '_') === safeState) || safeState;
+    const allMps = [...stateDiv.querySelectorAll('.mp-check')];
+    const checkedMps = allMps.filter(c => c.checked);
+    if (!checkedMps.length) return;
+    if (checkedMps.length === allMps.length) {
+      p.append('mp_state', geo);
+      checkedMps.forEach(c => _coveredNids.add(c.value));
+      return;
+    }
+    stateDiv.querySelectorAll('.party-group[data-divtype]').forEach(dtDiv => {
+      const allDt = [...dtDiv.querySelectorAll('.mp-check')];
+      const checkedDt = allDt.filter(c => c.checked);
+      if (!checkedDt.length) return;
+      if (checkedDt.length === allDt.length) {
+        p.append('mp_dt', `${geo}/${dtDiv.dataset.divtype}`);
+        checkedDt.forEach(c => _coveredNids.add(c.value));
+        return;
+      }
+      dtDiv.querySelectorAll('.party-group[data-elec]').forEach(elecDiv => {
+        const allElec = [...elecDiv.querySelectorAll('.mp-check')];
+        const checkedElec = allElec.filter(c => c.checked);
+        if (!checkedElec.length) return;
+        if (checkedElec.length === allElec.length) {
+          p.append('mp_elec', elecDiv.dataset.elec);
+          checkedElec.forEach(c => _coveredNids.add(c.value));
+        }
+      });
+    });
+  });
+
+  // Individual nids not covered by any group encoding
+  document.querySelectorAll('.senator-check:checked, .mp-check:checked').forEach(el => {
+    if (!_coveredNids.has(el.value)) p.append('nid', el.value);
+  });
+
+  const gender = document.querySelector('input[name="f-gender"]:checked')?.value || "";
+  if (gender) p.set("gender", gender);
+  const rowtype = document.querySelector('input[name="f-rowtype"]:checked')?.value || "";
+  if (rowtype) p.set("row_type", rowtype);
+  if (document.getElementById("f-first-speech").checked) p.set("first_speech", "1");
+  if (document.getElementById("f-question").checked)     p.set("question", "1");
+  if (document.getElementById("f-answer").checked)       p.set("answer", "1");
+  if (document.getElementById("f-no-interject").checked) p.set("interject", "0");
+  if (document.getElementById("f-written").checked)      p.set("written", "1");
+  if (document.getElementById("f-embedded-interject").checked) p.set("embedded", "1");
+  if (document.getElementById("f-main-chamber")?.checked) p.set("fedchamb", "0");
+  if (document.getElementById("f-fed-chamber")?.checked)  p.set("fedchamb", "1");
+
+  const base = location.origin + location.pathname;
+  return p.toString() ? `${base}?${p}` : base;
+}
+
+
+function restoreStateFromUrl() {
+  const p = new URLSearchParams(location.search);
+  if (!p.toString()) return null;
+
+  const q = p.get("q");
+  if (q) document.getElementById("expr-input").value = q;
+
+  const chamber = p.get("chamber") || "both";
+  const chamberEl = document.querySelector(`input[name="f-chamber"][value="${chamber}"]`);
+  if (chamberEl) chamberEl.checked = true;
+
+  const ps = parseInt(p.get("ps"));
+  if (ps) document.getElementById("page-size").value = ps;
+
+  if (p.get("cs") === "1") document.getElementById("f-case-sensitive").checked = true;
+  if (p.get("sc")) _sortCol = p.get("sc");
+  if (p.get("sd")) _sortDir = p.get("sd");
+
+  const drs = p.getAll("dr");
+  if (drs.length) {
+    document.querySelectorAll(".date-range-row").forEach(r => r.remove());
+    drs.forEach(dr => {
+      const [from, to] = dr.split(",");
+      addDateRange(from || "", to || "");
+    });
+  }
+
+  if (p.get("gender")) {
+    const el = document.querySelector(`input[name="f-gender"][value="${p.get("gender")}"]`);
+    if (el) el.checked = true;
+  }
+  const rt = p.get("row_type");
+  if (rt) {
+    const el = document.querySelector(`input[name="f-rowtype"][value="${rt}"]`);
+    if (el) el.checked = true;
+  }
+  if (p.get("first_speech") === "1") document.getElementById("f-first-speech").checked = true;
+  if (p.get("question")     === "1") document.getElementById("f-question").checked     = true;
+  if (p.get("answer")       === "1") document.getElementById("f-answer").checked       = true;
+  if (p.get("interject")    === "0") document.getElementById("f-no-interject").checked = true;
+  if (p.get("written")      === "1") document.getElementById("f-written").checked      = true;
+  if (p.get("embedded")     === "1") document.getElementById("f-embedded-interject").checked = true;
+  const fc = p.get("fedchamb");
+  if (fc === "0") document.getElementById("f-main-chamber").checked = true;
+  if (fc === "1") document.getElementById("f-fed-chamber").checked  = true;
+
+  return p;
+}
+
+function _findMpStateDiv(geo) {
+  const safeId = geo.replace(/[^a-zA-Z0-9]/g, '_');
+  const chk = document.getElementById(`mp-state-${safeId}`);
+  return chk ? chk.closest('.party-group') : null;
+}
+
+function restoreDynamicFilters(p) {
+  if (!p) return;
+
+  // Full party groups
+  p.getAll('pgrp').forEach(gid => {
+    document.querySelectorAll(`.party-check[data-group="${gid}"]`).forEach(c => c.checked = true);
+    const grpChk = document.getElementById(`group-${gid}`);
+    if (grpChk) { grpChk.checked = true; grpChk.indeterminate = false; }
+  });
+  // Individual parties (may be partial group)
+  p.getAll('party').forEach(v => {
+    const el = document.querySelector(`.party-check[value="${CSS.escape(v)}"]`);
+    if (el) { el.checked = true; if (el.dataset.group) syncGroupCheckbox(el.dataset.group); }
+  });
+
+  // Full senator states
+  p.getAll('sen_state').forEach(geo => {
+    const grpDiv = document.querySelector(`#state-senator-box .party-group[data-geo="${geo}"]`);
+    if (!grpDiv) return;
+    grpDiv.querySelectorAll('.senator-check').forEach(c => c.checked = true);
+    const grpChk = grpDiv.querySelector('.senator-group');
+    if (grpChk) { grpChk.checked = true; grpChk.indeterminate = false; }
+  });
+
+  // Full MP states
+  p.getAll('mp_state').forEach(geo => {
+    const stateDiv = _findMpStateDiv(geo);
+    if (!stateDiv) return;
+    stateDiv.querySelectorAll('.mp-check').forEach(c => c.checked = true);
+    const stateChk = stateDiv.querySelector('.mp-state-group');
+    if (stateChk) { stateChk.checked = true; stateChk.indeterminate = false; }
+  });
+
+  // Full MP div-types within a state
+  p.getAll('mp_dt').forEach(val => {
+    const slash = val.indexOf('/');
+    const geo = val.slice(0, slash), divType = val.slice(slash + 1);
+    const stateDiv = _findMpStateDiv(geo);
+    if (!stateDiv) return;
+    const dtDiv = [...stateDiv.querySelectorAll('.party-group[data-divtype]')]
+      .find(d => d.dataset.divtype === divType);
+    if (!dtDiv) return;
+    dtDiv.querySelectorAll('.mp-check').forEach(c => c.checked = true);
+    const dtChk = dtDiv.querySelector('.mp-divtype-group');
+    if (dtChk) { dtChk.checked = true; dtChk.indeterminate = false; }
+    const stateItems = stateDiv.querySelector(':scope > .party-group-items');
+    const stateChk = stateDiv.querySelector('.mp-state-group');
+    if (stateItems && stateChk) _updateMpStateChk(stateItems, stateChk);
+  });
+
+  // Full MP electorates
+  p.getAll('mp_elec').forEach(elec => {
+    const elecDiv = document.querySelector(`#electorate-mp-box .party-group[data-elec="${elec}"]`);
+    if (!elecDiv) return;
+    elecDiv.querySelectorAll('.mp-check').forEach(c => c.checked = true);
+    const elecChk = elecDiv.querySelector('.mp-elec-group');
+    if (elecChk) { elecChk.checked = true; elecChk.indeterminate = false; }
+  });
+
+  // Individual nids (fallback for partial selections)
+  p.getAll('nid').forEach(v => {
+    const el = document.querySelector(`.senator-check[value="${CSS.escape(v)}"], .mp-check[value="${CSS.escape(v)}"]`);
+    if (el) el.checked = true;
+  });
+}
+
+// ── On load ───────────────────────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", async () => {
+  document.body.classList.add('searched');
+  _applyTheme(localStorage.getItem("hansard-theme") === "light");
+  loadTrialBanner();
+  // Main search box: Enter or Search button only — no auto-search on typing
+  document.getElementById("expr-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") doSearch(1);
+  });
+  // Alias suggestions update after a pause — debounced to avoid flooding the Claude API
+  let _aliasDebounce = null;
+  document.getElementById("expr-input").addEventListener("input", () => {
+    clearTimeout(_aliasDebounce);
+    _aliasDebounce = setTimeout(() => updateAliasesIncremental(), 600);
+  });
+
+  // Electorate search filter (4-level: state → div type → electorate → MP)
+  document.getElementById("elec-search").addEventListener("input", function() {
+    const q = this.value.toLowerCase().trim();
+    document.querySelectorAll("#electorate-mp-box > .party-group").forEach(stateGrp => {
+      let stateVisible = false;
+      stateGrp.querySelectorAll(":scope > .party-group-items > .party-group").forEach(dtGrp => {
+        let dtVisible = false;
+        dtGrp.querySelectorAll(":scope > .party-group-items > .party-group").forEach(elecGrp => {
+          const elec = (elecGrp.dataset.elec || "").toLowerCase();
+          const show = q === "" || elec.includes(q);
+          elecGrp.style.display = show ? "" : "none";
+          if (show) dtVisible = true;
+        });
+        dtGrp.style.display = q === "" || dtVisible ? "" : "none";
+        if (dtVisible) stateVisible = true;
+      });
+      stateGrp.style.display = q === "" || stateVisible ? "" : "none";
+    });
+  });
+
+  // Date range row listeners are attached dynamically in _makeDateRangeRow()
+
+  // Radio groups: auto-trigger on change
+  ["f-gender", "f-rowtype", "f-chamber"].forEach(name => {
+    document.querySelectorAll(`input[name="${name}"]`).forEach(el => {
+      el.addEventListener("change", autoSearch);
+    });
+  });
+
+  // Speech flag checkboxes: auto-trigger
+  ["f-first-speech","f-question","f-answer","f-no-interject",
+   "f-main-chamber","f-fed-chamber","f-written","f-embedded-interject"]
+    .forEach(id => {
+      document.getElementById(id).addEventListener("change", autoSearch);
+    });
+
+  // Per-page select: auto-trigger
+  document.getElementById("page-size").addEventListener("change", autoSearch);
+
+  // Case-sensitive toggle: auto-trigger
+  document.getElementById("f-case-sensitive").addEventListener("change", () => {
+    const on = document.getElementById("f-case-sensitive").checked;
+    document.querySelectorAll(".alias-group").forEach(groupEl => {
+      const term = groupEl.dataset.term;
+      if (!term) return;
+      if (on) _addCaseVariantChips(term, groupEl);
+      else     _removeCaseVariantChips(groupEl);
+    });
+    updateCombinedExpr();
+    autoSearch();
+  });
+
+  const _urlParams = restoreStateFromUrl();
+  await loadMetadata();
+  restoreDynamicFilters(_urlParams);
+  _autoOpenActiveSections();
+  initChart();
+  // loadGeoData();  // MAPS (disabled) — re-enable when maps are restored
+
+  // ── Initial search if URL has params ───────────────────────────────────
+  const _hasUrlParams = new URLSearchParams(location.search).toString() !== '';
+  if (_hasUrlParams) doSearch(1);
+
+  // ── Pin bar: keep expr-input and pin-input in sync ──────────────────────
+  const _pinInput  = document.getElementById('pin-input');
+  const _exprInput = document.getElementById('expr-input');
+
+  _pinInput.addEventListener('input', () => {
+    _exprInput.value = _pinInput.value;
+  });
+  _exprInput.addEventListener('input', () => {
+    _pinInput.value = _exprInput.value;
+  });
+
+  // Pin bar search button / Enter key
+  document.getElementById('pin-search-btn').addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    doSearch(1);
+  });
+  _pinInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { window.scrollTo({ top: 0, behavior: 'instant' }); doSearch(1); }
+  });
+
+  // Pin bar clear button
+  document.getElementById('pin-clear-btn').addEventListener('click', () => {
+    _pinInput.value = '';
+    _exprInput.value = '';
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    doSearch(1);
+  });
+
+  // Pin chamber radios → sync to main and trigger search (directly, no autoSearch double-fire)
+  document.querySelectorAll('input[name="pin-chamber"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const mainRadio = document.querySelector(`input[name="f-chamber"][value="${radio.value}"]`);
+      if (mainRadio) {
+        mainRadio.checked = true;
+        // Suppress the autoSearch triggered by the main radio's change event
+        clearTimeout(_searchTimeout);
+      }
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      doSearch(1);
+    });
+  });
+
+  // Main chamber radios → also sync pin radios (no search — main radio already has autoSearch)
+  document.querySelectorAll('input[name="f-chamber"]').forEach(radio => {
+    radio.addEventListener('change', () => _syncPinChamberFromMain());
+  });
+});
+
+function _syncPinChamberFromMain() {
+  const val = document.querySelector('input[name="f-chamber"]:checked')?.value || 'both';
+  const pinRadio = document.querySelector(`input[name="pin-chamber"][value="${val}"]`);
+  if (pinRadio) pinRadio.checked = true;
+}
+
+let _senatorsByState  = {};
+let _mpsByStateType   = {};
+let _nidParties       = {};  // name_id → [party, ...]
+let _parliamentMeta   = [];  // [{no, label, start, end}, ...] newest first
+let _nidParliaments   = {};  // name_id → [parliament_no, ...]
+let _partyParliaments = {};  // party → [parliament_no, ...]
+
+let _resultNids    = null;  // Set of name_ids in current results (null = unrestricted)
+let _resultParties = null;  // Set of parties in current results
+let _resultParlNos = null;  // Set of parliament numbers in current results
+let _corpusDateMin = '';
+let _corpusDateMax = '';
+
+function buildGeoGroups(containerId, dataMap, itemClass, groupClass) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = "";
+  for (const geo of Object.keys(dataMap).sort()) {
+    const people = dataMap[geo];
+    const safeId = geo.replace(/[^a-zA-Z0-9]/g, "_");
+    const groupEl = document.createElement("div");
+    groupEl.className = "party-group mb-1";
+    groupEl.dataset.geo = geo;
+    const header = document.createElement("div");
+    header.className = "party-group-header";
+    header.innerHTML = `
+      <button class="party-group-toggle" title="Expand">▶</button>
+      <input type="checkbox" class="form-check-input ${groupClass} flex-shrink-0"
+             id="${groupClass}-${safeId}" data-geo="${safeId}" />
+      <label class="form-check-label small" for="${groupClass}-${safeId}">${esc(geo)} <span class="filter-count"></span></label>`;
+    const items = document.createElement("div");
+    items.className = "party-group-items d-none";
+    items.id = `${groupClass}-items-${safeId}`;
+    items.style.paddingLeft = "2.2rem";
+    for (const p of people) {
+      const pid = `${itemClass}-${CSS.escape(p.name_id)}`;
+      const div = document.createElement("div");
+      div.className = "form-check";
+      div.innerHTML = `
+        <input class="form-check-input ${itemClass}" type="checkbox"
+               value="${esc(p.name_id)}" id="${pid}" />
+        <label class="form-check-label small" for="${pid}">${esc(p.name)} <span class="filter-count"></span></label>`;
+      items.appendChild(div);
+    }
+    groupEl.appendChild(header);
+    groupEl.appendChild(items);
+    container.appendChild(groupEl);
+    const toggleBtn = header.querySelector(".party-group-toggle");
+    toggleBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      const opening = items.classList.contains("d-none");
+      items.classList.toggle("d-none", !opening);
+      toggleBtn.classList.toggle("open", opening);
+    });
+    const groupChk = header.querySelector(`.${groupClass}`);
+    groupChk.addEventListener("change", () => {
+      items.querySelectorAll(`.${itemClass}`).forEach(c => c.checked = groupChk.checked);
+      groupChk.indeterminate = false;
+      _applyPanelCrossFilter();
+      autoSearch(1000);
+    });
+    items.querySelectorAll(`.${itemClass}`).forEach(c => {
+      c.addEventListener("change", () => {
+        const children = [...items.querySelectorAll(`.${itemClass}`)];
+        const n = children.filter(c => c.checked).length;
+        groupChk.checked = n === children.length;
+        groupChk.indeterminate = n > 0 && n < children.length;
+        _applyPanelCrossFilter();
+        autoSearch(1000);
+      });
+    });
+  }
+}
+
+const _DIV_TYPE_ORDER = ["Inner Metropolitan", "Outer Metropolitan", "Provincial", "Rural", "Other"];
+
+function _updateMpStateChk(stateItems, stateChk) {
+  const all = [...stateItems.querySelectorAll(".mp-check")];
+  const n = all.filter(c => c.checked).length;
+  stateChk.checked = all.length > 0 && n === all.length;
+  stateChk.indeterminate = n > 0 && n < all.length;
+}
+
+function _updateMpDtChk(dtItems, dtChk) {
+  const all = [...dtItems.querySelectorAll(".mp-check")];
+  const n = all.filter(c => c.checked).length;
+  dtChk.checked = all.length > 0 && n === all.length;
+  dtChk.indeterminate = n > 0 && n < all.length;
+}
+
+function _makeToggle(items, btn) {
+  btn.addEventListener("click", e => {
+    e.stopPropagation();
+    const opening = items.classList.contains("d-none");
+    items.classList.toggle("d-none", !opening);
+    btn.classList.toggle("open", opening);
+  });
+}
+
+function _updateRegionTypeChk(divType) {
+  const rtChk = document.querySelector(`.region-type-chk[data-divtype="${divType}"]`);
+  if (!rtChk) return;
+  const allMps = [...document.querySelectorAll(`#electorate-mp-box .party-group[data-divtype="${divType}"] .mp-check`)];
+  const n = allMps.filter(c => c.checked).length;
+  rtChk.checked = allMps.length > 0 && n === allMps.length;
+  rtChk.indeterminate = n > 0 && n < allMps.length;
+}
+
+// ── Cross-panel interoperability ───────────────────────────────────────────────
+
+function _clearPanel(containerSelector, checkClasses) {
+  for (const cls of checkClasses) {
+    document.querySelectorAll(`${containerSelector} .${cls}`).forEach(c => {
+      c.checked = false; c.indeterminate = false;
+    });
+  }
+  if (containerSelector === '#electorate-mp-box') {
+    document.querySelectorAll('.region-type-chk').forEach(c => { c.checked = false; c.indeterminate = false; });
+  }
+  if (containerSelector === '#parliament-filter-box') _syncParliamentDateRange();
+  _applyPanelCrossFilter();
+  autoSearch(400);
+}
+
+function _toggleExpandAll(containerSelector, btn) {
+  const allItems = [...document.querySelectorAll(`${containerSelector} .party-group-items`)];
+  const anyCollapsed = allItems.some(el => el.classList.contains('d-none'));
+  allItems.forEach(el => el.classList.toggle('d-none', !anyCollapsed));
+  document.querySelectorAll(`${containerSelector} .party-group-toggle`).forEach(b => b.classList.toggle('open', anyCollapsed));
+  btn.textContent = anyCollapsed ? 'Collapse all' : 'Expand all';
+}
+
+function _filterNavPanel(containerSelector, visibleNids) {
+  const container = document.querySelector(containerSelector);
+  if (!container) return;
+  if (!visibleNids) {
+    container.querySelectorAll('.form-check, .party-group').forEach(el => { el.style.display = ''; });
+    return;
+  }
+  // Show/hide individual person rows
+  container.querySelectorAll('.party-group-items > .form-check').forEach(row => {
+    const chk = row.querySelector('input[type="checkbox"]');
+    const nid = chk ? chk.value : '';
+    row.style.display = (nid && visibleNids.has(nid)) ? '' : 'none';
+  });
+  // Bottom-up: hide groups whose children are all hidden
+  const groups = [...container.querySelectorAll('.party-group')].reverse();
+  groups.forEach(grp => {
+    const items = grp.querySelector(':scope > .party-group-items');
+    if (!items) { grp.style.display = ''; return; }
+    const visibleFormChecks = [...items.querySelectorAll(':scope > .form-check')].some(fc => fc.style.display !== 'none');
+    const visibleChildGroups = [...items.querySelectorAll(':scope > .party-group')].some(cg => cg.style.display !== 'none');
+    grp.style.display = (visibleFormChecks || visibleChildGroups) ? '' : 'none';
+  });
+}
+
+function _filterPartyPanel(visibleParties) {
+  const scroll = document.getElementById('party-scroll');
+  if (!scroll) return;
+  if (!visibleParties) {
+    scroll.querySelectorAll('.form-check, .party-group').forEach(el => { el.style.display = ''; });
+    return;
+  }
+  scroll.querySelectorAll('.form-check').forEach(row => {
+    const chk = row.querySelector('.party-check');
+    if (!chk) return;
+    row.style.display = visibleParties.has(chk.value) ? '' : 'none';
+  });
+  scroll.querySelectorAll('.party-group').forEach(grp => {
+    const items = grp.querySelector('.party-group-items');
+    if (!items) { grp.style.display = ''; return; }
+    const hasVisible = [...items.querySelectorAll(':scope > .form-check')].some(fc => fc.style.display !== 'none');
+    grp.style.display = hasVisible ? '' : 'none';
+  });
+}
+
+function _applyPanelCrossFilter() {
+  _filterNavPanel('#state-senator-box', _resultNids);
+  _filterNavPanel('#electorate-mp-box', _resultNids);
+  _filterPartyPanel(_resultParties);
+  _filterParliamentPanel(_resultParlNos);
+}
+
+function _filterParliamentPanel(visibleParls) {
+  const box = document.getElementById('parliament-filter-box');
+  if (!box) return;
+  if (!visibleParls) {
+    box.querySelectorAll('.form-check').forEach(el => { el.style.display = ''; });
+    return;
+  }
+  box.querySelectorAll('.form-check').forEach(row => {
+    const chk = row.querySelector('.parl-check');
+    if (!chk) return;
+    row.style.display = visibleParls.has(parseInt(chk.value)) ? '' : 'none';
+  });
+}
+
+// ── Date range rows ────────────────────────────────────────────────────────────
+function _makeDateRangeRow(from, to) {
+  const row = document.createElement("div");
+  row.className = "date-range-row";
+  row.innerHTML = `
+    <input type="date" class="form-control form-control-sm dr-from" value="${from || ''}" />
+    <span class="text-muted">–</span>
+    <input type="date" class="form-control form-control-sm dr-to"   value="${to   || ''}" />
+    <button class="date-range-remove" title="Remove range" onclick="removeDateRange(this)">×</button>`;
+  row.querySelectorAll("input").forEach(inp => {
+    if (_corpusDateMin) inp.min = _corpusDateMin;
+    if (_corpusDateMax) inp.max = _corpusDateMax;
+    inp.addEventListener("change", () => { autoSearch(600); });
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") doSearch(1); });
+  });
+  return row;
+}
+
+function addDateRange(from, to) {
+  const c = document.getElementById("date-ranges-container");
+  c.appendChild(_makeDateRangeRow(from || _corpusDateMin, to || _corpusDateMax));
+}
+
+function removeDateRange(btn) {
+  const row = btn.closest(".date-range-row");
+  const c   = document.getElementById("date-ranges-container");
+  if (c.children.length > 1) { row.remove(); autoSearch(600); }
+  else { row.querySelectorAll("input").forEach(i => i.value = ""); autoSearch(600); }
+}
+
+function getDateRanges() {
+  return [...document.querySelectorAll(".date-range-row")].map(row => ({
+    from: row.querySelector(".dr-from").value,
+    to:   row.querySelector(".dr-to").value,
+  })).filter(r => r.from || r.to);
+}
+
+function setDateRanges(ranges) {
+  const c = document.getElementById("date-ranges-container");
+  c.innerHTML = "";
+  if (!ranges || !ranges.length) {
+    c.appendChild(_makeDateRangeRow(_corpusDateMin, _corpusDateMax));
+    return;
+  }
+  ranges.forEach(r => c.appendChild(_makeDateRangeRow(r.from, r.to)));
+}
+
+function _syncParliamentDateRange() {
+  const all     = [...document.querySelectorAll('.parl-check')];
+  const checked = all.filter(c => c.checked);
+  if (checked.length === 0 || checked.length === all.length) {
+    setDateRanges([{ from: _corpusDateMin, to: _corpusDateMax }]);
+    return;
+  }
+  // Sort checked parliaments by number, group into contiguous runs
+  const sorted = checked.slice().sort((a, b) => +a.value - +b.value);
+  const ranges = [];
+  let runStart = sorted[0], runEnd = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    if (+sorted[i].value === +runEnd.value + 1) {
+      runEnd = sorted[i];
+    } else {
+      ranges.push({ from: runStart.dataset.start, to: runEnd.dataset.end });
+      runStart = runEnd = sorted[i];
+    }
+  }
+  ranges.push({ from: runStart.dataset.start, to: runEnd.dataset.end });
+  setDateRanges(ranges);
+}
+
+function buildParliamentFilters() {
+  const box = document.getElementById('parliament-filter-box');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const pm of _parliamentMeta) {
+    const div = document.createElement('div');
+    div.className = 'form-check';
+    const id = `parl-chk-${pm.no}`;
+    div.innerHTML = `
+      <input class="form-check-input parl-check" type="checkbox" value="${pm.no}" id="${id}"
+             data-start="${pm.start}" data-end="${pm.end}" />
+      <label class="form-check-label small" for="${id}"><span class="parl-label"><span class="parl-ord">${esc(pm.label.split(' Parliament ')[0])}</span><span>Parliament</span><span class="parl-dates">(${esc((pm.label.split(' Parliament ')[1] || '').replace(/^\(|\)$/g,''))})</span><span class="filter-count"></span></span></label>`;
+    const chk = div.querySelector('input');
+    chk.addEventListener('change', () => {
+      _syncParliamentDateRange();
+      _applyPanelCrossFilter();
+      autoSearch(1000);
+    });
+    box.appendChild(div);
+  }
+}
+
+function buildMpGroups(containerId, dataMap) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = "";
+
+  for (const state of Object.keys(dataMap).sort()) {
+    const divTypes = dataMap[state];
+    const stateId = state.replace(/[^a-zA-Z0-9]/g, "_");
+
+    const stateEl = document.createElement("div");
+    stateEl.className = "party-group mb-1";
+
+    const stateHeader = document.createElement("div");
+    stateHeader.className = "party-group-header";
+    stateHeader.innerHTML = `
+      <button class="party-group-toggle" title="Expand">▶</button>
+      <input type="checkbox" class="form-check-input mp-state-group flex-shrink-0" id="mp-state-${stateId}" />
+      <label class="form-check-label small" for="mp-state-${stateId}">${esc(state)} <span class="filter-count"></span></label>`;
+
+    const stateItems = document.createElement("div");
+    stateItems.className = "party-group-items d-none";
+
+    const sortedTypes = Object.keys(divTypes).sort((a, b) => {
+      const ai = _DIV_TYPE_ORDER.indexOf(a), bi = _DIV_TYPE_ORDER.indexOf(b);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
+
+    for (const divType of sortedTypes) {
+      const electorates = divTypes[divType];
+      const dtId = `${stateId}_${divType.replace(/[^a-zA-Z0-9]/g, "_")}`;
+
+      const dtEl = document.createElement("div");
+      dtEl.className = "party-group mb-1 ms-1";
+      dtEl.dataset.divtype = divType;
+
+      const dtHeader = document.createElement("div");
+      dtHeader.className = "party-group-header";
+      dtHeader.innerHTML = `
+        <button class="party-group-toggle" title="Expand">▶</button>
+        <input type="checkbox" class="form-check-input mp-divtype-group flex-shrink-0" id="mp-dt-${dtId}" />
+        <label class="form-check-label small" for="mp-dt-${dtId}">${esc(divType)} <span class="filter-count"></span></label>`;
+
+      const dtItems = document.createElement("div");
+      dtItems.className = "party-group-items d-none";
+
+      for (const elec of Object.keys(electorates).sort()) {
+        const mps = electorates[elec];
+        const elecId = `${dtId}_${elec.replace(/[^a-zA-Z0-9]/g, "_")}`;
+
+        const elecEl = document.createElement("div");
+        elecEl.className = "party-group mb-1 ms-1";
+        elecEl.dataset.elec = elec;
+
+        const elecHeader = document.createElement("div");
+        elecHeader.className = "party-group-header";
+        elecHeader.innerHTML = `
+          <button class="party-group-toggle" title="Expand">▶</button>
+          <input type="checkbox" class="form-check-input mp-elec-group flex-shrink-0" id="mp-elec-${elecId}" />
+          <label class="form-check-label small" for="mp-elec-${elecId}">${esc(elec)} <span class="filter-count"></span></label>`;
+
+        const elecItems = document.createElement("div");
+        elecItems.className = "party-group-items d-none";
+        elecItems.style.paddingLeft = "2.2rem";
+
+        for (const p of mps) {
+          const row = document.createElement("div");
+          row.className = "form-check";
+          row.innerHTML = `
+            <input class="form-check-input mp-check" type="checkbox"
+                   value="${esc(p.name_id)}" id="mp-check-${CSS.escape(p.name_id)}" />
+            <label class="form-check-label small" for="mp-check-${CSS.escape(p.name_id)}">${esc(p.name)} <span class="filter-count"></span></label>`;
+          elecItems.appendChild(row);
+        }
+
+        elecEl.appendChild(elecHeader);
+        elecEl.appendChild(elecItems);
+        dtItems.appendChild(elecEl);
+
+        _makeToggle(elecItems, elecHeader.querySelector(".party-group-toggle"));
+
+        const elecChk = elecHeader.querySelector(".mp-elec-group");
+        elecChk.addEventListener("change", () => {
+          elecItems.querySelectorAll(".mp-check").forEach(c => c.checked = elecChk.checked);
+          elecChk.indeterminate = false;
+          _updateMpDtChk(dtItems, dtHeader.querySelector(".mp-divtype-group"));
+          _updateMpStateChk(stateItems, stateHeader.querySelector(".mp-state-group"));
+          _updateRegionTypeChk(divType);
+          _applyPanelCrossFilter();
+          autoSearch(1000);
+        });
+
+        elecItems.querySelectorAll(".mp-check").forEach(c => {
+          c.addEventListener("change", () => {
+            const sibs = [...elecItems.querySelectorAll(".mp-check")];
+            const n = sibs.filter(c => c.checked).length;
+            elecChk.checked = n === sibs.length;
+            elecChk.indeterminate = n > 0 && n < sibs.length;
+            _updateMpDtChk(dtItems, dtHeader.querySelector(".mp-divtype-group"));
+            _updateMpStateChk(stateItems, stateHeader.querySelector(".mp-state-group"));
+            _updateRegionTypeChk(divType);
+            _applyPanelCrossFilter();
+            autoSearch(1000);
+          });
+        });
+      }
+
+      dtEl.appendChild(dtHeader);
+      dtEl.appendChild(dtItems);
+      stateItems.appendChild(dtEl);
+
+      _makeToggle(dtItems, dtHeader.querySelector(".party-group-toggle"));
+
+      const dtChk = dtHeader.querySelector(".mp-divtype-group");
+      dtChk.addEventListener("change", () => {
+        dtItems.querySelectorAll(".mp-check, .mp-elec-group").forEach(c => {
+          c.checked = dtChk.checked; c.indeterminate = false;
+        });
+        dtChk.indeterminate = false;
+        _updateMpStateChk(stateItems, stateHeader.querySelector(".mp-state-group"));
+        _updateRegionTypeChk(divType);
+        _applyPanelCrossFilter();
+        autoSearch(1000);
+      });
+    }
+
+    stateEl.appendChild(stateHeader);
+    stateEl.appendChild(stateItems);
+    container.appendChild(stateEl);
+
+    _makeToggle(stateItems, stateHeader.querySelector(".party-group-toggle"));
+
+    const stateChk = stateHeader.querySelector(".mp-state-group");
+    stateChk.addEventListener("change", () => {
+      stateItems.querySelectorAll(".mp-check, .mp-divtype-group, .mp-elec-group").forEach(c => {
+        c.checked = stateChk.checked; c.indeterminate = false;
+      });
+      _applyPanelCrossFilter();
+      autoSearch(1000);
+    });
+  }
+}
+
+async function loadMetadata() {
+  try {
+    const r = await fetch("/api/metadata");
+    const meta = await r.json();
+    _senatorsByState  = meta.senators_by_state  || {};
+    _mpsByStateType   = meta.mps_by_state_type   || {};
+    _nidParties       = meta.nid_parties         || {};
+    _parliamentMeta   = meta.parliaments         || [];
+    _nidParliaments   = meta.nid_parliaments     || {};
+    _partyParliaments = meta.party_parliaments   || {};
+
+    // Header stats
+    const senFmt = meta.senate_rows.toLocaleString();
+    const houFmt = meta.house_rows.toLocaleString();
+    document.getElementById("header-stats").textContent =
+      `Senate: ${senFmt} entries  |  House: ${houFmt} entries`;
+
+    // Date range — set min/max attributes and initialise values to full corpus range
+    _corpusDateMin = meta.date_range.min || '';
+    _corpusDateMax = meta.date_range.max || '';
+    setDateRanges([{ from: _corpusDateMin, to: _corpusDateMax }]);
+    // Update header label and chart year axis from actual corpus range
+    const _minYear = meta.date_range.min ? parseInt(meta.date_range.min.slice(0, 4)) : 1998;
+    const _maxYear = meta.date_range.max ? parseInt(meta.date_range.max.slice(0, 4)) : 2026;
+    document.getElementById("corpus-range-label").textContent =
+      `Australian Federal Parliament · House & Senate · ${_minYear}–${_maxYear}`;
+    _CHART_YEARS = Array.from({ length: _maxYear - _minYear + 1 }, (_, i) => String(_minYear + i));
+
+    // Hierarchical geo groups
+    buildGeoGroups("state-senator-box",  _senatorsByState, "senator-check", "senator-group");
+    buildMpGroups("electorate-mp-box",   _mpsByStateType);
+    buildParliamentFilters();
+
+    // Region-type quick-filter checkboxes (cross-state div-type toggles)
+    document.querySelectorAll(".region-type-chk").forEach(rtChk => {
+      rtChk.addEventListener("change", () => {
+        const dt = rtChk.dataset.divtype;
+        document.querySelectorAll(`#electorate-mp-box .party-group[data-divtype="${dt}"]`).forEach(dtEl => {
+          const dtChk = dtEl.querySelector(".mp-divtype-group");
+          if (dtChk) { dtChk.checked = rtChk.checked; dtChk.indeterminate = false; }
+          dtEl.querySelectorAll(".mp-elec-group, .mp-check").forEach(c => {
+            c.checked = rtChk.checked; c.indeterminate = false;
+          });
+        });
+        document.querySelectorAll("#electorate-mp-box > .party-group").forEach(stateGrp => {
+          const stateItems = stateGrp.querySelector(".party-group-items");
+          const stateChk = stateGrp.querySelector(".mp-state-group");
+          if (stateItems && stateChk) _updateMpStateChk(stateItems, stateChk);
+        });
+        _applyPanelCrossFilter();
+        autoSearch(1000);
+      });
+    });
+
+    // Party checkboxes — grouped
+    renderPartyFilters(meta.parties);
+  } catch (err) {
+    console.error("Failed to load metadata:", err);
+  }
+}
+
+// ── Party group definitions ────────────────────────────────────────────────────
+const PARTY_GROUPS = [
+  { id: "labor",     label: "Labor",              parties: ["ALP"] },
+  { id: "coalition", label: "Coalition",          parties: ["LP", "LNP", "NAT", "NATS", "NATS WA", "NatsWA", "CLP", "NP"] },
+  { id: "greens",    label: "Greens",             parties: ["AG", "GWA"] },
+  { id: "centre",    label: "Centre & Democrats", parties: ["CA", "NXT", "AD", "LDP"] },
+  { id: "crossbench",label: "Crossbench & Minor", parties: ["IND", "PHON", "JLN", "KAP", "UAP", "PUP", "DHJP", "Hinch", "CDP", "DLP", "FFP", "AMEP", "AC", "APA", "AUS", "AV", "GLT", "PFP", "TG"] },
+];
+
+function renderPartyFilters(allParties) {
+  const container = document.getElementById("party-scroll");
+  container.innerHTML = "";
+
+  // Track which parties have been assigned to a group
+  const assigned = new Set();
+
+  for (const group of PARTY_GROUPS) {
+    const present = group.parties.filter(p => allParties.includes(p));
+    if (!present.length) continue;
+    present.forEach(p => assigned.add(p));
+
+    const groupEl = document.createElement("div");
+    groupEl.className = "party-group mb-1";
+
+    // Header row
+    const header = document.createElement("div");
+    header.className = "party-group-header";
+    header.innerHTML = `
+      ${present.length > 1
+        ? `<button class="party-group-toggle" data-group="${group.id}" title="Expand">▶</button>`
+        : `<span style="display:inline-block;width:14px"></span>`}
+      <input type="checkbox" class="form-check-input group-check flex-shrink-0"
+             id="group-${group.id}" data-group="${group.id}" />
+      <label for="group-${group.id}" class="small fw-semibold flex-grow-1 mb-0"
+             style="cursor:pointer">${esc(group.label)} <span class="filter-count" data-group-count="${group.id}"></span></label>`;
+    groupEl.appendChild(header);
+
+    // Child items (hidden by default)
+    const items = document.createElement("div");
+    items.className = "party-group-items d-none";
+    items.id = `group-items-${group.id}`;
+    items.style.paddingLeft = "2.2rem";
+    for (const p of present) {
+      const id = `party-${CSS.escape(p)}`;
+      const div = document.createElement("div");
+      div.className = "form-check";
+      div.innerHTML = `
+        <input class="form-check-input party-check" type="checkbox"
+               value="${esc(p)}" id="${id}" data-group="${group.id}" />
+        <label class="form-check-label small" for="${id}">${esc(p)} <span class="filter-count"></span></label>`;
+      items.appendChild(div);
+    }
+    groupEl.appendChild(items);
+    container.appendChild(groupEl);
+
+    // Toggle button handler
+    const toggleBtn = header.querySelector(".party-group-toggle");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", e => {
+        e.stopPropagation();
+        items.classList.toggle("d-none");
+        toggleBtn.classList.toggle("open");
+      });
+    }
+
+    // Group checkbox → check/uncheck all children + auto-search
+    const groupChk = header.querySelector(".group-check");
+    groupChk.addEventListener("change", () => {
+      items.querySelectorAll(".party-check").forEach(c => c.checked = groupChk.checked);
+      groupChk.indeterminate = false;
+      _applyPanelCrossFilter();
+      autoSearch();
+    });
+
+    // Child checkbox → update group state + auto-search
+    items.querySelectorAll(".party-check").forEach(c => {
+      c.addEventListener("change", () => { syncGroupCheckbox(group.id); _applyPanelCrossFilter(); autoSearch(); });
+    });
+  }
+
+  // Any party not in any group → "Other" flat entries
+  const unassigned = allParties.filter(p => !assigned.has(p) && p.trim() && p !== "(");
+  if (unassigned.length) {
+    const sep = document.createElement("div");
+    sep.className = "small text-muted mt-1 mb-1" ;
+    sep.textContent = "Other";
+    container.appendChild(sep);
+    for (const p of unassigned) {
+      const id = `party-${CSS.escape(p)}`;
+      const div = document.createElement("div");
+      div.className = "form-check";
+      div.innerHTML = `
+        <input class="form-check-input party-check" type="checkbox" value="${esc(p)}" id="${id}" />
+        <label class="form-check-label small" for="${id}">${esc(p)} <span class="filter-count"></span></label>`;
+      const chk = div.querySelector("input");
+      chk.addEventListener("change", () => { _applyPanelCrossFilter(); autoSearch(); });
+      container.appendChild(div);
+    }
+  }
+}
+
+function syncGroupCheckbox(groupId) {
+  const groupChk = document.getElementById(`group-${groupId}`);
+  const children = document.querySelectorAll(`#group-items-${groupId} .party-check`);
+  const checkedCount = [...children].filter(c => c.checked).length;
+  if (checkedCount === 0) {
+    groupChk.checked = false;
+    groupChk.indeterminate = false;
+  } else if (checkedCount === children.length) {
+    groupChk.checked = true;
+    groupChk.indeterminate = false;
+  } else {
+    groupChk.checked = false;
+    groupChk.indeterminate = true;
+  }
+}
+
+// ── Facet counts ───────────────────────────────────────────────────────────────
+function updateFacetCounts(facets) {
+  if (!facets) return;
+  const fmt = n => (n !== undefined && n !== null && n > 0) ? n.toLocaleString() : '';
+
+  // Helper: set count on a label's .filter-count span given an element id
+  function setCount(elemId, count) {
+    const span = document.querySelector(`label[for="${CSS.escape(elemId)}"] .filter-count`);
+    if (span) span.textContent = fmt(count);
+  }
+
+  // Helper: sum name_id counts for all .mp-check / .senator-check in a container
+  const nidCounts = facets.name_id || {};
+  function sumNids(container) {
+    return [...container.querySelectorAll('.mp-check, .senator-check')]
+      .reduce((s, c) => s + (nidCounts[c.value] || 0), 0);
+  }
+
+  // ── Chamber radios ─────────────────────────────────────────────────────────
+  const chamberCounts = facets.chamber || {};
+  setCount('ch-senate', chamberCounts['senate']);
+  setCount('ch-house',  chamberCounts['house']);
+
+  // ── Party ─────────────────────────────────────────────────────────────────
+  const partyCounts = facets.party || {};
+  document.querySelectorAll('.party-check').forEach(chk => setCount(chk.id, partyCounts[chk.value]));
+  for (const group of PARTY_GROUPS) {
+    const span = document.querySelector(`[data-group-count="${group.id}"]`);
+    if (span) {
+      const total = group.parties.reduce((s, p) => s + (partyCounts[p] || 0), 0);
+      span.textContent = fmt(total);
+    }
+  }
+
+  // ── Gender ────────────────────────────────────────────────────────────────
+  const genderCounts = facets.gender || {};
+  setCount('g-m', genderCounts['male']);
+  setCount('g-f', genderCounts['female']);
+
+  // ── Senators by state ─────────────────────────────────────────────────────
+  document.querySelectorAll('.senator-check').forEach(chk => setCount(chk.id, nidCounts[chk.value]));
+  document.querySelectorAll('.senator-group').forEach(chk => {
+    const groupEl = chk.closest('.party-group');
+    if (groupEl) setCount(chk.id, sumNids(groupEl));
+  });
+
+  // ── MPs: individual, electorate, divtype, state ───────────────────────────
+  document.querySelectorAll('.mp-check').forEach(chk => setCount(chk.id, nidCounts[chk.value]));
+  // Each level: sum all .mp-check within the containing .party-group
+  ['mp-elec-group', 'mp-divtype-group', 'mp-state-group'].forEach(cls => {
+    document.querySelectorAll('.' + cls).forEach(chk => {
+      const groupEl = chk.closest('.party-group');
+      if (groupEl) setCount(chk.id, sumNids(groupEl));
+    });
+  });
+
+  // ── Region-type quick filters (divtype rollup from mp-check) ──────────────
+  const divTypeTotals = {};
+  document.querySelectorAll('.party-group[data-divtype]').forEach(grp => {
+    const dt = grp.dataset.divtype;
+    divTypeTotals[dt] = (divTypeTotals[dt] || 0) + sumNids(grp);
+  });
+  document.querySelectorAll('.region-type-chk').forEach(chk => {
+    setCount(chk.id, divTypeTotals[chk.dataset.divtype]);
+  });
+
+  // ── Parliament ────────────────────────────────────────────────────────────
+  const parlCounts = facets.parliament || {};
+  document.querySelectorAll('.parl-check').forEach(chk => setCount(chk.id, parlCounts[chk.value]));
+
+
+  // ── Row type ──────────────────────────────────────────────────────────────
+  const rtCounts = facets.row_type || {};
+  setCount('rt-speech',   rtCounts['speech']);
+  setCount('rt-exchange', rtCounts['exchange']);
+
+  // ── Speech flags ──────────────────────────────────────────────────────────
+  const flagMap = {
+    'f-first-speech':       facets.first_speech,
+    'f-question':           facets.question,
+    'f-answer':             facets.answer,
+    'f-no-interject':       facets.no_interject,
+    'f-main-chamber':       facets.main_chamber,
+    'f-fed-chamber':        facets.fed_chamber,
+    'f-written':            facets.q_in_writing,
+    'f-embedded-interject': facets.has_embedded_interject,
+  };
+  for (const [id, cnt] of Object.entries(flagMap)) {
+    const span = document.querySelector(`label[for="${id}"] .filter-count`);
+    if (span) span.textContent = fmt(cnt);
+  }
+}
+
+function clearFacetCounts() {
+  document.querySelectorAll('.filter-count').forEach(el => el.textContent = '');
+}
+
+// ── Collect filters ────────────────────────────────────────────────────────────
+function collectFilters() {
+  const filters = {};
+
+  const dateRanges = getDateRanges();
+  if (dateRanges.length) filters.date_ranges = dateRanges;
+
+  const parties = [...document.querySelectorAll(".party-check:checked")].map(e => e.value);
+  if (parties.length) filters.party = parties;
+
+  const gender = document.querySelector('input[name="f-gender"]:checked')?.value || "";
+  if (gender) filters.gender = gender;
+
+  const checkedPeople = [...document.querySelectorAll(".senator-check:checked, .mp-check:checked")]
+    .map(e => e.value);
+  if (checkedPeople.length) filters.name_id = checkedPeople;
+
+
+  const rowtype = document.querySelector('input[name="f-rowtype"]:checked')?.value || "";
+  if (rowtype) filters.row_type = rowtype;
+
+  if (document.getElementById("f-first-speech").checked)    filters.first_speech = 1;
+  if (document.getElementById("f-question").checked)         filters.question = 1;
+  if (document.getElementById("f-answer").checked)           filters.answer = 1;
+  if (document.getElementById("f-no-interject").checked)     filters.interject = 0;
+  if (document.getElementById("f-written").checked)          filters.q_in_writing = 1;
+  if (document.getElementById("f-embedded-interject").checked) filters.has_embedded_interject = true;
+
+  // House chamber flags (fedchamb_flag: 0=main, 1=federation)
+  const mainChamber = document.getElementById("f-main-chamber").checked;
+  const fedChamber  = document.getElementById("f-fed-chamber").checked;
+  if (mainChamber && !fedChamber)  filters.fedchamb_flag = 0;
+  if (fedChamber  && !mainChamber) filters.fedchamb_flag = 1;
+
+  return filters;
+}
+
+// ── Expression helpers ─────────────────────────────────────────────────────────
+
+// Wrap any bare multi-word segments between operators/parens/quotes in single quotes.
+// e.g. "climate change | coal"  →  "'climate change' | coal"
+function _autoQuoteExpression(expr) {
+  let result = '', i = 0;
+  const n = expr.length;
+  while (i < n) {
+    if (expr[i] === "'" || expr[i] === '"') {
+      const q = expr[i];
+      const end = expr.indexOf(q, i + 1);
+      if (end === -1) { result += expr.slice(i); break; }
+      result += expr.slice(i, end + 1);
+      i = end + 1;
+    } else if ("&|!()".includes(expr[i])) {
+      result += expr[i]; i++;
+    } else {
+      let j = i;
+      while (j < n && !/[''"&|!()]/.test(expr[j])) j++;
+      const chunk = expr.slice(i, j);
+      const trimmed = chunk.trim();
+      result += (trimmed.includes(' ') && trimmed)
+        ? chunk.replace(trimmed, `'${trimmed}'`)
+        : chunk;
+      i = j;
+    }
+  }
+  return result;
+}
+
+function buildFullExpression() {
+  let expr = document.getElementById("expr-input").value.trim();
+  if (!expr) return expr;
+  // Auto-quote simple phrases (no boolean operators) — strip stray quotes first
+  if (!/[&|!()]/.test(expr)) expr = `'${expr.replace(/['"]/g, "")}'`;
+  for (const [term, aliases] of _selectedAliases) {
+    if (!aliases.size) continue;
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const aliasList = [...aliases].map(a => `'${a}'`).join(" | ");
+    // Replace 'term' with ('term' | alias1 | alias2), preserving surrounding boolean structure
+    expr = expr.replace(new RegExp(`'${escaped}'`, "g"), `('${term}' | ${aliasList})`);
+  }
+  return expr;
+}
+
+function updateCombinedExpr() {
+  const el = document.getElementById("expr-combined");
+  // Collect terms that have at least one selected alias
+  const rows = [];
+  for (const [term, aliases] of _selectedAliases) {
+    if (!aliases.size) continue;
+    const aliasParts = [...aliases].map(a =>
+      `<span class="combined-or">|</span> <span class="combined-alias">'${esc(a)}'</span>`
+    ).join(" ");
+    rows.push(
+      `<div class="combined-row"><span class="combined-term">'${esc(term)}'</span> ${aliasParts}</div>`
+    );
+  }
+  if (!rows.length) { el.classList.add("d-none"); return; }
+  el.innerHTML = rows.join("");
+  el.classList.remove("d-none");
+}
+
+// ── Mobile reading pane overlay ─────────────────────────────────────────────
+function closeMobileReadingPane() {
+  document.getElementById('main-results').classList.remove('mobile-open');
+}
+
+// ── Result selection (email-pane) ───────────────────────────────────────────
+function selectResult(matchId, date, chamber) {
+  if (_selectedMatchId) {
+    document.getElementById(`row-${_selectedMatchId}`)?.classList.remove('selected');
+  }
+  _selectedMatchId = matchId;
+  document.getElementById(`row-${matchId}`)?.classList.add('selected');
+
+  document.getElementById('reading-pane-placeholder').style.display = 'none';
+
+  const res = _currentResults.find(r => r.match_id === matchId);
+  const headerEl = document.getElementById('reading-pane-header');
+  if (res && headerEl) {
+    const chamberBadge = res.chamber === 'senate'
+      ? `<span class="badge badge-senate bg-primary">Senate</span>`
+      : `<span class="badge badge-house bg-success">House</span>`;
+    const typeBadges = buildTypeBadges(res);
+    const termBadgesHtml = (res.matched_terms && res.matched_terms.length)
+      ? res.matched_terms.map(t => `<span class="badge bg-warning text-dark">${esc(t)}</span>`).join(' ')
+      : '';
+    headerEl.innerHTML = `
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+          ${chamberBadge}
+          <strong class="ms-1">${esc(_fixName(res.name, res.gender))}</strong>
+          <span class="text-muted ms-1">· ${_partyBadge(res.party)} · ${esc(res.state_or_electorate)}</span>
+          ${typeBadges !== '<span class="text-muted small">—</span>' ? `<span class="ms-1">${typeBadges}</span>` : ''}
+        </div>
+        <div class="d-flex align-items-center gap-3">
+          <a href="${_hansardUrl(res.date, res.chamber)}" target="_blank" rel="noopener"
+             style="font-size:0.78rem;opacity:0.7">↗ Hansard</a>
+          <span class="result-date">${esc(formatDate(res.date))}</span>
+        </div>
+      </div>
+      ${res.debate_heading ? `<div class="small text-muted mt-1">${esc(res.debate_heading)}</div>` : ''}
+      ${termBadgesHtml ? `<div class="mt-1">${termBadgesHtml}</div>` : ''}`;
+    headerEl.style.display = 'block';
+  }
+
+  // Highlight the matching bar in the timeseries chart
+  if (res) _highlightChartBar(res.date.slice(0, 4), res.chamber);
+
+  // Scroll reading pane to top immediately so header is visible
+  document.getElementById('reading-pane').scrollTop = 0;
+
+  // On mobile: open reading pane as full-screen overlay
+  if (window.innerWidth < 520) {
+    document.getElementById('main-results').classList.add('mobile-open');
+  }
+
+  showContext(matchId, date, chamber);
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────────
+async function doSearch(page) {
+  const inputEl = document.getElementById("expr-input");
+  const raw = inputEl.value.trim();
+  if (raw && /[&|!()]/.test(raw) && !_exprLooksComplete(raw)) {
+    inputEl.value = _autoQuoteExpression(raw);
+  }
+  const mainExpr   = inputEl.value.trim();
+  const expression = buildFullExpression();
+  _lastFullExpression = expression;
+  hideError();
+
+  // Keep browser URL bar in sync so users can copy/share directly from the address bar
+  const _shareUrl = buildShareUrl();
+  history.replaceState(null, "", _shareUrl);
+
+  const chamber       = document.querySelector('input[name="f-chamber"]:checked')?.value || "both";
+  const pageSize      = parseInt(document.getElementById("page-size").value) || 20;
+  const caseSensitive = document.getElementById("f-case-sensitive").checked;
+  const filters       = collectFilters();
+
+  const payload = {
+    expression, chamber, page, page_size: pageSize,
+    case_sensitive: caseSensitive, filters,
+    sort_col: _sortCol || "date",
+    sort_dir: _sortDir,
+  };
+  _lastSearch = payload;
+
+  // Cancel any in-flight request before starting a new one
+  if (_requestController) _requestController.abort();
+  _requestController = new AbortController();
+  const signal = _requestController.signal;
+
+  // Reset result filter immediately so panels show all items while request is in-flight
+  _resultNids = null; _resultParties = null; _resultParlNos = null;
+  _applyPanelCrossFilter();
+
+  setLoading(true);
+  try {
+    const r = await fetch("/api/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal,
+    });
+    const data = await r.json();
+    if (r.status === 401 || r.status === 403) { handle401(data); return; }
+    if (!r.ok) {
+      showError(data.error || "Search failed.");
+      return;
+    }
+    // Only apply result filter when there's an active search expression.
+    // Panel-only selections (parliament date range, party, senator) must not
+    // drive panel visibility — that causes the same locking problem we removed
+    // from the cross-filter.
+    if (payload.expression) {
+      _resultNids    = data.result_nids    && data.result_nids.length    ? new Set(data.result_nids)               : null;
+      _resultParties = data.result_parties && data.result_parties.length ? new Set(data.result_parties)            : null;
+      _resultParlNos = data.result_parl_nos && data.result_parl_nos.length ? new Set(data.result_parl_nos.map(Number)) : null;
+    } else {
+      _resultNids = null; _resultParties = null; _resultParlNos = null;
+    }
+    _applyPanelCrossFilter();
+    updateFacetCounts(data.facet_counts);
+    renderResults(data);
+    updateCombinedExpr();
+    if (mainExpr) {
+      updateAliasesIncremental();
+    } else {
+      _selectedAliases.clear();
+      _lastAliasTerms = new Set();
+      updateCombinedExpr();
+      closeAliases();
+    }
+  } catch (err) {
+    if (err.name === "AbortError") return; // superseded by a newer request
+    showError("Network error: " + err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ── Hansard source URL ─────────────────────────────────────────────────────────
+function _hansardUrl(date, chamber) {
+  const [y, m, d] = date.split('-');
+  const dataset = chamber === 'senate' ? 'hansards' : 'hansardr';
+  return `https://parlinfo.aph.gov.au/parlInfo/search/display/display.w3p;adv=yes;orderBy=_fragment_number,doc_date-rev;page=0;query=Dataset%3A${dataset}%20Date%3A${parseInt(d)}%2F${parseInt(m)}%2F${y};rec=0;resCount=Default`;
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────────
+function renderResults(data) {
+  _expanded = {};
+  _currentResults = data.results || [];
+  _corpusSeeds = data.corpus_seeds || [];
+
+  // Query display
+  const queryEl = document.getElementById("query-display");
+  if (_lastFullExpression) {
+    queryEl.textContent = _lastFullExpression;
+    queryEl.classList.remove("d-none");
+  } else {
+    queryEl.classList.add("d-none");
+  }
+
+  // Stats bar
+  const statsEl = document.getElementById("stats-bar");
+  if (data.total === 0) {
+    statsEl.textContent = "No matches found.";
+    document.getElementById("no-results").classList.remove("d-none");
+  } else {
+    const totalFmt = data.total.toLocaleString();
+    const senFmt   = data.senate_count.toLocaleString();
+    const houFmt   = data.house_count.toLocaleString();
+    const filtFmt  = data.filtered_rows.toLocaleString();
+    const origFmt  = data.original_rows.toLocaleString();
+    statsEl.textContent =
+      `${totalFmt} matches  (${senFmt} Senate / ${houFmt} House)  ·  ` +
+      `filtered from ${filtFmt} of ${origFmt} entries`;
+    document.getElementById("no-results").classList.add("d-none");
+  }
+
+  _selectedMatchId = null;
+  document.getElementById('reading-pane-placeholder').style.display = '';
+  document.getElementById('reading-pane-header').style.display = 'none';
+  document.getElementById('reading-pane-body').innerHTML = '';
+  renderTableBody();
+  renderChart(data);
+  // renderMaps(data.state_counts, data.electorate_counts);  // MAPS (disabled)
+  renderPagination(data.page, data.pages);
+}
+
+function renderTableBody() {
+  const results = _currentResults;
+  const list = document.getElementById("results-list");
+  list.innerHTML = "";
+
+  for (const res of results) {
+    const chamberBadge = res.chamber === "senate"
+      ? `<span class="badge badge-senate bg-primary">Senate</span>`
+      : `<span class="badge badge-house bg-success">House</span>`;
+
+    const typeBadges = buildTypeBadges(res);
+    const dateStr = formatDate(res.date);
+
+    const card = document.createElement("div");
+    card.className = "result-card";
+    card.id = `row-${res.match_id}`;
+    card.onclick = () => selectResult(res.match_id, res.date, res.chamber);
+    card.innerHTML = `
+      <div class="result-card-header">
+        <div class="result-card-speaker">
+          ${chamberBadge}
+          <span class="speaker-name">${esc(_fixName(res.name, res.gender))}</span>
+        </div>
+        <span class="result-date">${esc(dateStr)}</span>
+      </div>
+      <div class="result-card-meta">
+        ${_partyBadge(res.party)}
+        <span class="meta-sep">·</span>
+        <span>${esc(res.state_or_electorate)}</span>
+        ${typeBadges !== '<span class="text-muted small">—</span>' ? `<span class="meta-sep">·</span>${typeBadges}` : ''}
+      </div>
+      <p class="preview-text" style="font-size:0.74rem;color:var(--tn-fg-dim);margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4">${esc(res.body_preview)}</p>`;
+
+    list.appendChild(card);
+  }
+}
+
+function sortByCol(col) {
+  if (_sortCol === col) {
+    _sortDir = _sortDir === "asc" ? "desc" : "asc";
+  } else {
+    _sortCol = col;
+    _sortDir = "asc";
+  }
+  updateSortHeaders();
+  doSearch(1);
+}
+
+function updateSortHeaders() {
+  document.querySelectorAll(".sort-pill").forEach(btn => {
+    const active = btn.dataset.sort === (_sortCol || "date");
+    btn.classList.toggle("sort-active", active);
+    // Strip any existing direction indicator then re-add
+    btn.textContent = btn.textContent.replace(/\s*[▲▼]$/, "");
+    if (active) btn.textContent += _sortDir === "asc" ? " ▲" : " ▼";
+  });
+}
+
+function _fixName(name, gender) {
+  if (gender === 'female' && name && name.startsWith('Mr ')) return 'Ms ' + name.slice(3);
+  return name || '';
+}
+
+function _partyBadge(party) {
+  if (!party) return '';
+  const p = party.toUpperCase().trim();
+  let bg, fg;
+  if (p === 'ALP' || p.includes('LABOR') || p.includes('LABOUR')) {
+    bg = 'rgba(158,45,45,0.85)'; fg = '#f5dede';
+  } else if (['LP','LNP','NP','NAT','CLP'].includes(p) ||
+             p.includes('LIBERAL') || p.includes('NATIONAL') || p.includes('COUNTRY LIB')) {
+    bg = 'rgba(40,85,155,0.85)'; fg = '#d5e3f8';
+  } else if (p === 'GRN' || p === 'AG' || p.includes('GREEN')) {
+    bg = 'rgba(48,110,48,0.85)'; fg = '#d0efd0';
+  } else if (['AD','CA','NXT','AMEP','PEP'].includes(p) ||
+             p.includes('DEMOCRAT') || p.includes('CENTRE ALLIANCE') || p.includes('XENOPHON')) {
+    bg = 'rgba(130,105,15,0.85)'; fg = '#f5e8b0';
+  } else {
+    bg = 'rgba(100,90,80,0.55)'; fg = '#d5cfc8';
+  }
+  return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.72rem;font-weight:600;background:${bg};color:${fg}">${esc(party)}</span>`;
+}
+
+function buildTypeBadges(res) {
+  const badges = [];
+  if (res.is_question)             badges.push('<span class="badge bg-info text-dark">Q</span>');
+  if (res.is_answer)               badges.push('<span class="badge bg-warning text-dark">A</span>');
+  if (res.is_interject)            badges.push('<span class="badge bg-secondary">I</span>');
+  if (res.first_speech)            badges.push('<span class="badge bg-danger">FS</span>');
+  if (res.has_embedded_interject)  badges.push('<span class="badge bg-light text-dark border">⌥I</span>');
+  return badges.join(" ") || '<span class="text-muted small">—</span>';
+}
+
+function buildDetailEl(res) {
+  const div = document.createElement("div");
+  div.className = "result-detail";
+
+  let html = "";
+
+  if (res.debate_heading) {
+    html += `<div class="mb-2"><strong>Debate:</strong> ${esc(res.debate_heading)}</div>`;
+  }
+
+  if (res.matched_terms && res.matched_terms.length) {
+    const termBadges = res.matched_terms.map(t =>
+      `<span class="badge bg-warning text-dark">${esc(t)}</span>`
+    ).join(" ");
+    html += `<div class="mb-2"><strong>Matched terms:</strong> ${termBadges}</div>`;
+  }
+
+  if (res.context_before && res.context_before.length) {
+    html += `<div class="mb-2"><em class="text-muted small">Context before:</em>`;
+    for (const line of res.context_before) {
+      html += `<div class="ctx-line">${esc(line)}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Highlight matched terms in body
+  const highlightedBody = highlightTerms(res.body, res.matched_terms || []);
+  html += `<div class="mb-2"><strong>Full text:</strong><div class="body-full mt-1">${highlightedBody}</div></div>`;
+
+  if (res.context_after && res.context_after.length) {
+    html += `<div class="mb-2"><em class="text-muted small">Context after:</em>`;
+    for (const line of res.context_after) {
+      html += `<div class="ctx-line">${esc(line)}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  const metaItems = [
+    res.name_id       ? `name_id: ${esc(res.name_id)}`       : null,
+    res.gender        ? `gender: ${esc(res.gender)}`          : null,
+    res.partyfacts_id ? `partyfacts_id: ${esc(res.partyfacts_id)}` : null,
+  ].filter(Boolean);
+  if (metaItems.length) {
+    html += `<div class="text-muted small">${metaItems.join("  ·  ")}</div>`;
+  }
+
+  div.innerHTML = html;
+  return div;
+}
+
+function highlightTerms(text, terms) {
+  if (!terms || !terms.length) return esc(text);
+  let escaped = esc(text);
+  for (const term of terms) {
+    const re = new RegExp(escapeRegex(esc(term)), "gi");
+    escaped = escaped.replace(re, m => `<mark>${m}</mark>`);
+  }
+  return escaped;
+}
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function formatDate(d) {
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00");
+  return dt.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+// ── Toggle expand ──────────────────────────────────────────────────────────────
+function toggleRow(matchId) {
+  const detail = document.getElementById(`detail-${matchId}`);
+  const card   = document.getElementById(`row-${matchId}`);
+  if (!detail) return;
+
+  const isOpen = _expanded[matchId];
+  detail.style.display = isOpen ? "none" : "";
+  _expanded[matchId] = !isOpen;
+  const btn = card?.querySelector(".expand-btn");
+  if (btn) btn.textContent = isOpen ? "▶ expand" : "▼ collapse";
+}
+
+// ── Pagination ─────────────────────────────────────────────────────────────────
+function renderPagination(currentPage, totalPages) {
+  const ul = document.getElementById("pagination");
+  ul.innerHTML = "";
+  if (totalPages <= 1) return;
+
+  const makeItem = (label, page, disabled, active) => {
+    const li = document.createElement("li");
+    li.className = `page-item${disabled ? " disabled" : ""}${active ? " active" : ""}`;
+    li.innerHTML = `<a class="page-link" href="#">${label}</a>`;
+    if (!disabled && !active) {
+      li.querySelector("a").addEventListener("click", e => {
+        e.preventDefault();
+        doSearch(page);
+      });
+    }
+    return li;
+  };
+
+  ul.appendChild(makeItem("‹", currentPage - 1, currentPage <= 1, false));
+
+  // Show up to 7 page buttons with ellipsis
+  const pages = computePageRange(currentPage, totalPages);
+  let prev = null;
+  for (const p of pages) {
+    if (prev !== null && p > prev + 1) {
+      ul.appendChild(makeItem("…", null, true, false));
+    }
+    ul.appendChild(makeItem(String(p), p, false, p === currentPage));
+    prev = p;
+  }
+
+  ul.appendChild(makeItem("›", currentPage + 1, currentPage >= totalPages, false));
+}
+
+function computePageRange(current, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const set = new Set([1, 2, total - 1, total]);
+  for (let d = -2; d <= 2; d++) {
+    const p = current + d;
+    if (p >= 1 && p <= total) set.add(p);
+  }
+  return [...set].sort((a, b) => a - b);
+}
+
+// ── Download CSV ───────────────────────────────────────────────────────────────
+async function downloadCSV() {
+  if (!_lastSearch) { showError("Run a search first."); return; }
+  const payload = { ..._lastSearch };
+  delete payload.page;
+  delete payload.page_size;
+  delete payload.context;
+
+  const r = await fetch("/api/download", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) { showError("Download failed."); return; }
+  const blob = await r.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = "hansard_matches.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Desktop accordion ─────────────────────────────────────────────────────────
+function toggleFilterBody(contentId) {
+  const body = document.getElementById(contentId);
+  if (!body) return;
+  const section = body.closest('.mb-3');
+  const trigger = section?.querySelector('.filter-section-trigger');
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  if (trigger) trigger.classList.toggle('open', !isOpen);
+}
+
+function openFilter(contentId, title) {
+  if (window.innerWidth < 520) openMobileSidebar();
+  toggleFilterBody(contentId);
+}
+
+function openMobileSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('filter-sheet-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeMobileSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('filter-sheet-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function _autoOpenActiveSections() {
+  if (window.innerWidth < 520) return;
+  const checks = {
+    'fsb-date':      () => document.querySelectorAll('.date-range-row input[value]:not([value=""])').length > 0,
+    'fsb-parl':      () => !!document.querySelector('.parl-check:checked'),
+    'fsb-party':     () => !!document.querySelector('.party-check:checked, .group-check:checked'),
+    'fsb-gender':    () => !!document.querySelector('#g-m:checked, #g-f:checked'),
+    'fsb-senators':  () => !!document.querySelector('.senator-check:checked'),
+    'fsb-electorate':() => !!document.querySelector('.mp-check:checked, .region-type-chk:checked'),
+    'fsb-rowtype':   () => !!document.querySelector('#rt-speech:checked, #rt-exchange:checked'),
+    'fsb-flags':     () => !!document.querySelector('#fsb-flags input[type="checkbox"]:checked'),
+  };
+  for (const [id, check] of Object.entries(checks)) {
+    if (check()) toggleFilterBody(id);
+  }
+}
+
+
+// ── Clear search ───────────────────────────────────────────────────────────────
+function runExampleSearch(query) {
+  document.getElementById("expr-input").value = query;
+  const pinInput = document.getElementById("pin-input");
+  if (pinInput) pinInput.value = query;
+  doSearch(1);
+}
+
+function clearSearch() {
+  document.getElementById("expr-input").value = "";
+  const pinInput = document.getElementById("pin-input");
+  if (pinInput) pinInput.value = "";
+  _lastAliasTerms = new Set();
+  _selectedAliases.clear();
+  updateCombinedExpr();
+  closeAliases();
+  doSearch(1);
+}
+
+// ── Reset all (title click) ────────────────────────────────────────────────────
+function resetAll() {
+  // Clear expression and aliases
+  document.getElementById("expr-input").value = "";
+  const _pinInput = document.getElementById("pin-input");
+  if (_pinInput) _pinInput.value = "";
+  _lastAliasTerms = new Set();
+  _selectedAliases.clear();
+  updateCombinedExpr();
+  closeAliases();
+  // Reset chamber to both
+  const bothEl = document.querySelector('input[name="f-chamber"][value="both"]');
+  if (bothEl) bothEl.checked = true;
+  _syncPinChamberFromMain();
+  // Reset sort and page size
+  _sortCol = null; _sortDir = "desc";
+  updateSortHeaders();
+  document.getElementById("page-size").value = "20";
+  document.getElementById("f-case-sensitive").checked = false;
+  // Clear URL
+  history.replaceState(null, "", location.pathname);
+  // Collapse all open accordion sections and close mobile drawer
+  document.querySelectorAll('.filter-section-body.open').forEach(b => {
+    b.classList.remove('open');
+    b.closest('.mb-3')?.querySelector('.filter-section-trigger')?.classList.remove('open');
+  });
+  closeMobileSidebar();
+  // Delegate remaining filter reset then search
+  resetFilters();
+}
+
+// ── Reset filters ──────────────────────────────────────────────────────────────
+function resetFilters() {
+  _resultNids = null; _resultParties = null; _resultParlNos = null;
+  setDateRanges([{ from: _corpusDateMin, to: _corpusDateMax }]);
+  document.querySelectorAll(".party-check, .group-check").forEach(c => {
+    c.checked = false; c.indeterminate = false;
+  });
+  document.getElementById("g-any").checked   = true;
+  document.getElementById("rt-both").checked = true;
+  document.querySelectorAll(".senator-check, .senator-group, .mp-check, .mp-divtype-group, .mp-state-group, .mp-elec-group, .region-type-chk, .parl-check").forEach(c => {
+    c.checked = false; c.indeterminate = false;
+  });
+  document.getElementById("elec-search").value = "";
+  document.querySelectorAll("#electorate-mp-box .party-group, #electorate-mp-box .form-check").forEach(g => g.style.display = "");
+  ["f-first-speech","f-question","f-answer","f-no-interject",
+   "f-main-chamber","f-fed-chamber","f-written","f-embedded-interject"]
+    .forEach(id => document.getElementById(id).checked = false);
+  _applyPanelCrossFilter();
+  clearFacetCounts();
+  doSearch(1);
+}
+
+// ── Alias suggestions ──────────────────────────────────────────────────────────
+
+function extractSearchTerms(expr) {
+  if (!expr) return [];
+  // Simple phrase (no boolean operators) → treat whole expression as one term
+  if (!/[&|!()]/.test(expr)) {
+    const t = expr.replace(/['"]/g, "").trim();
+    return t ? [t] : [];
+  }
+  const terms = [];
+  // Extract quoted terms first
+  for (const m of expr.matchAll(/['"](.+?)['"]/g)) terms.push(m[1]);
+  // Strip quoted portions and boolean operators; extract remaining tokens
+  const rest = expr.replace(/['"][^'"]*['"]/g, "").replace(/[&|!()\s]+/g, " ").trim();
+  if (rest) {
+    for (const tok of rest.split(/\s+/)) {
+      const t = tok.trim();
+      if (t.length > 0) terms.push(t);
+    }
+  }
+  return [...new Set(terms)];
+}
+
+async function updateAliasesIncremental() {
+  const expr = document.getElementById("expr-input").value.trim();
+  const container = document.getElementById("alias-container");
+  const groups    = document.getElementById("alias-groups");
+
+  if (!expr) { closeAliases(); _lastAliasTerms = new Set(); return; }
+
+  const newTerms = new Set(extractSearchTerms(expr));
+  if (!newTerms.size) return;
+
+  // Remove groups for terms no longer in the expression
+  for (const term of _lastAliasTerms) {
+    if (!newTerms.has(term)) {
+      document.getElementById("alias-group-" + btoa(term))?.remove();
+      _selectedAliases.delete(term);
+    }
+  }
+
+  // Add loading placeholders for new terms
+  const termsToFetch = [];
+  for (const term of newTerms) {
+    if (!_lastAliasTerms.has(term)) {
+      const g = document.createElement("div");
+      g.className = "alias-group";
+      g.id = "alias-group-" + btoa(term);
+      g.dataset.term = term;
+      g.innerHTML = `<div class="alias-group-label">'${esc(term)}'</div>
+        <div class="alias-group-chips"><span class="small text-muted">Finding related terms…</span></div>`;
+      groups.appendChild(g);
+      termsToFetch.push(term);
+    }
+  }
+
+  _lastAliasTerms = newTerms;
+  updateCombinedExpr();
+  if (groups.children.length > 0) container.classList.remove("d-none");
+
+  if (termsToFetch.length) {
+    await Promise.all(termsToFetch.map(term => fetchAndRenderGroup(term)));
+  }
+  if (!groups.children.length) container.classList.add("d-none");
+}
+
+function _caseVariants(term) {
+  const lower = term.toLowerCase();
+  const upper = term.toUpperCase();
+  const title = term.replace(/\b\w/g, c => c.toUpperCase());
+  const first = term.charAt(0).toUpperCase() + term.slice(1).toLowerCase();
+  return [...new Set([lower, upper, title, first])];
+}
+
+function _makeChip(term, alias, termSet) {
+  const chip = document.createElement("button");
+  chip.className = "btn btn-sm " + (termSet.has(alias) ? "btn-success" : "btn-outline-secondary");
+  chip.style.fontSize = "0.78rem";
+  chip.textContent = alias;
+  chip.title = "Click to add / remove from search";
+  chip.addEventListener("click", () => {
+    if (_isLoading) return;
+    if (termSet.has(alias)) {
+      termSet.delete(alias);
+      chip.classList.replace("btn-success", "btn-outline-secondary");
+    } else {
+      termSet.add(alias);
+      chip.classList.replace("btn-outline-secondary", "btn-success");
+    }
+    updateCombinedExpr();
+    autoSearch(1000);
+  });
+  return chip;
+}
+
+function _addCaseVariantChips(term, groupEl) {
+  if (!groupEl) return;
+  const main = document.getElementById("expr-input").value;
+  // Exact match only — we want to suppress the identical string already in the expression
+  // but keep variants that differ in case (that's the whole point of this feature)
+  const mainTermsExact = new Set([...main.matchAll(/['"](.+?)['"]/g)].map(m => m[1]));
+  const variants = _caseVariants(term).filter(v => !mainTermsExact.has(v));
+  if (!variants.length) return;
+
+  if (!_selectedAliases.has(term)) _selectedAliases.set(term, new Set());
+  const termSet = _selectedAliases.get(term);
+  const chipsEl = groupEl.querySelector(".alias-group-chips");
+
+  // Remove stale placeholder if present
+  chipsEl.querySelector(".text-muted")?.remove();
+
+  for (const v of variants) {
+    if (chipsEl.querySelector(`[data-case-variant="${CSS.escape(v)}"]`)) continue;
+    const chip = _makeChip(term, v, termSet);
+    chip.dataset.caseVariant = v;
+    chip.classList.add("border-info");  // subtle visual distinction
+    chipsEl.prepend(chip);
+  }
+}
+
+function _removeCaseVariantChips(groupEl) {
+  if (!groupEl) return;
+  groupEl.querySelectorAll("[data-case-variant]").forEach(chip => {
+    // Deselect from _selectedAliases
+    const term = groupEl.dataset.term;
+    if (term) _selectedAliases.get(term)?.delete(chip.dataset.caseVariant);
+    chip.remove();
+  });
+  // Restore placeholder if no chips remain
+  const chipsEl = groupEl.querySelector(".alias-group-chips");
+  if (!chipsEl.children.length) {
+    chipsEl.innerHTML = '<span class="small text-muted">No new suggestions.</span>';
+  }
+}
+
+async function fetchAndRenderGroup(term) {
+  const groupEl = document.getElementById("alias-group-" + btoa(term));
+  if (groupEl) groupEl.dataset.term = term;  // stash for _removeCaseVariantChips
+  try {
+    const r = await fetch("/api/suggest_aliases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ term, seeds: _corpusSeeds }),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) {
+      if (groupEl) groupEl.querySelector(".alias-group-chips").innerHTML =
+        '<span class="small text-muted">Suggestions unavailable.</span>';
+      return;
+    }
+    renderAliasGroup(term, data.aliases || [], groupEl);
+    if (document.getElementById("f-case-sensitive").checked) {
+      _addCaseVariantChips(term, groupEl);
+    }
+  } catch (err) {
+    if (groupEl) groupEl.querySelector(".alias-group-chips").innerHTML =
+      '<span class="small text-muted">Suggestions unavailable.</span>';
+  }
+}
+
+function renderAliasGroup(term, aliases, groupEl) {
+  if (!groupEl) return;
+  const main = document.getElementById("expr-input").value;
+  const mainTerms = new Set([...main.matchAll(/['"](.+?)['"]/g)].map(m => m[1].toLowerCase()));
+  aliases = aliases.filter(a => !mainTerms.has(a.toLowerCase()));
+
+  const chipsEl = groupEl.querySelector(".alias-group-chips");
+  chipsEl.innerHTML = "";
+
+  if (!aliases.length) {
+    chipsEl.innerHTML = '<span class="small text-muted">No new suggestions.</span>';
+    return;
+  }
+
+  if (!_selectedAliases.has(term)) _selectedAliases.set(term, new Set());
+  const termSet = _selectedAliases.get(term);
+
+  for (const alias of aliases) {
+    chipsEl.appendChild(_makeChip(term, alias, termSet));
+  }
+}
+
+function closeAliases() {
+  document.getElementById("alias-container").classList.add("d-none");
+  document.getElementById("alias-groups").innerHTML = "";
+}
+
+// ── Chart ──────────────────────────────────────────────────────────────────────
+let _chart = null;
+let _CHART_YEARS = Array.from({ length: 29 }, (_, i) => String(1998 + i)); // updated in loadMetadata
+
+const _CHART_LABEL_COLOR = "#928374";          // --tn-comment, works in dark + light
+const _CHART_GRID_COLOR  = "rgba(146,131,116,0.18)";
+
+const _CHART_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false, position: "top", labels: { boxWidth: 12, color: _CHART_LABEL_COLOR, font: { size: 14 } } },
+    title: { display: false },
+    tooltip: {
+      callbacks: {
+        footer: items => {
+          const total = items.reduce((s, i) => s + i.parsed.y, 0);
+          return items.length > 1 ? `Total: ${total}` : "";
+        }
+      }
+    }
+  },
+  scales: {
+    x: {
+      stacked: true,
+      ticks: { font: { size: 10 }, color: _CHART_LABEL_COLOR },
+      grid:  { color: _CHART_GRID_COLOR },
+      title: { display: false },
+    },
+    y: {
+      stacked: true, beginAtZero: true,
+      ticks: { font: { size: 10 }, precision: 0, color: _CHART_LABEL_COLOR },
+      grid:  { color: _CHART_GRID_COLOR },
+      title: { display: false },
+    },
+  },
+};
+
+function initChart() {
+  const container = document.getElementById("chart-container");
+  container.classList.remove("d-none");
+  const ctx = document.getElementById("timeseries-chart").getContext("2d");
+  // Build empty year axis 1998–2026
+  _chart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: _CHART_YEARS,
+      datasets: [
+        { label: "Senate", data: Array(_CHART_YEARS.length).fill(0), backgroundColor: "rgba(158,61,31,0.75)",  borderColor: "rgba(158,61,31,1)",  borderWidth: 1 },
+        { label: "House",  data: Array(_CHART_YEARS.length).fill(0), backgroundColor: "rgba(78,107,74,0.75)",  borderColor: "rgba(78,107,74,1)",  borderWidth: 1 },
+      ],
+    },
+    options: _CHART_OPTIONS,
+  });
+}
+
+function renderChart(data) {
+  const ts = data.timeseries || {};
+
+  // Build lookup from the (possibly sparse) server response
+  const senMap = {}, houMap = {};
+  (ts.years || []).forEach((y, i) => {
+    senMap[y] = ts.senate[i] || 0;
+    houMap[y] = ts.house[i]  || 0;
+  });
+
+  // Always use full corpus range for x-axis regardless of date filter
+  const axisYears = _CHART_YEARS;
+
+  const senData = axisYears.map(y => senMap[y] || 0);
+  const houData = axisYears.map(y => houMap[y] || 0);
+
+  const hasBoth = senData.some(v => v > 0) && houData.some(v => v > 0);
+
+  _chart.data.labels = axisYears;
+  _chart.data.datasets = [
+    { label: "Senate", data: senData, backgroundColor: "rgba(158,61,31,0.75)",  borderColor: "rgba(158,61,31,1)",  borderWidth: 1 },
+    { label: "House",  data: houData, backgroundColor: "rgba(78,107,74,0.75)",  borderColor: "rgba(78,107,74,1)",  borderWidth: 1 },
+  ];
+  _chart.update();
+}
+
+function _highlightChartBar(year, chamber) {
+  if (!_chart) return;
+  const labels = _chart.data.labels;
+  const n = labels.length;
+  const hi = labels.indexOf(String(year));
+  _chart.data.datasets.forEach(ds => {
+    const isSen = ds.label === 'Senate';
+    const baseColor    = isSen ? 'rgba(158,61,31,0.75)'  : 'rgba(78,107,74,0.75)';
+    const hlColor      = isSen ? 'rgba(220,100,60,1)'    : 'rgba(110,180,100,1)';
+    const baseBorder   = isSen ? 'rgba(158,61,31,1)'     : 'rgba(78,107,74,1)';
+    const hlBorder     = isSen ? 'rgba(255,160,120,1)'   : 'rgba(170,230,150,1)';
+    const isMatch = hi !== -1 && (chamber === 'senate') === isSen;
+    ds.backgroundColor = Array.from({ length: n }, (_, i) =>
+      (i === hi && isMatch) ? hlColor : baseColor
+    );
+    ds.borderColor = Array.from({ length: n }, (_, i) =>
+      (i === hi && isMatch) ? hlBorder : baseBorder
+    );
+    ds.borderWidth = 1;
+  });
+  _chart.update('none');
+}
+
+/* ── MAPS (disabled) ─────────────────────────────────────────────────────────
+   Choropleth maps showing Senate results by state and House results by electorate.
+   Rendered with D3 v7 (geoMercator projection, sequential dark→yellow colour scale).
+   Backend computes state_counts / electorate_counts in the search route and returns
+   them alongside search results.
+
+   GeoJSON files (kept in static/):
+     aus_states.geojson      — 8 state/territory polygons; property: STATE_NAME
+     aus_electorates.geojson — 151 electorate polygons;    property: electorateName
+       Source: pmcau/AustralianElectorates, 1% simplified 2022 boundaries
+
+   Known rendering issues (documented for when this is revisited):
+   1. SVG sizing: getBoundingClientRect() returns 0 when the container is d-none.
+      Fix: use requestAnimationFrame after making container visible, then stamp
+      explicit width/height attrs on the SVG element so D3 path coords match layout.
+   2. Bean electorate geometry includes Norfolk Island (~168°E), causing fitExtent
+      to zoom all the way out to the Pacific and render mainland Australia as a dot.
+      Fix: use a fixed mainland bounding box (_AUS_BBOX) for the projection instead
+      of fitting to the full feature collection.
+
+   To re-enable:
+   - Uncomment the D3 v7 <script> tag in <head>
+   - Uncomment the CSS block (.map-wrap, #map-tooltip, etc.)
+   - Uncomment the HTML block (maps-container + map-tooltip divs) below the chart
+   - Uncomment loadGeoData() in DOMContentLoaded
+   - Uncomment renderMaps() call in renderResults()
+
+let _statesGeo     = null;
+let _electoratesGeo = null;
+
+async function loadGeoData() {
+  try {
+    const [sr, er] = await Promise.all([
+      fetch('/static/aus_states.geojson'),
+      fetch('/static/aus_electorates.geojson'),
+    ]);
+    _statesGeo      = await sr.json();
+    _electoratesGeo = await er.json();
+  } catch (e) {
+    console.warn('Failed to load geo data:', e);
+  }
+}
+
+// Fixed mainland Australia bounding box for projection — avoids offshore territories
+// (e.g. Norfolk Island in Bean's geometry at 168°E, Lord Howe Island at 159°E)
+// distorting the fitExtent zoom level.
+const _AUS_BBOX = { type: "Feature", geometry: { type: "Polygon", coordinates: [
+  [[112, -9], [154, -9], [154, -44], [112, -44], [112, -9]]
+]}};
+
+function _renderChoropleth(svgId, geoJson, counts, nameProp) {
+  const svgEl = document.getElementById(svgId);
+  if (!svgEl || !geoJson) return;
+
+  // getBoundingClientRect is accurate now (called inside rAF, container is visible)
+  const rect   = svgEl.getBoundingClientRect();
+  const width  = rect.width  || 400;
+  const height = rect.height || 260;
+
+  // Stamp explicit SVG dimensions so the D3 coordinate space matches CSS layout
+  svgEl.setAttribute('width',  width);
+  svgEl.setAttribute('height', height);
+
+  // Build case-insensitive lookup
+  const lookup = {};
+  for (const [k, v] of Object.entries(counts)) lookup[k.toLowerCase()] = v;
+
+  const maxCount = Math.max(1, ...Object.values(counts));
+  const colorScale = d3.scaleSequential()
+    .domain([0, maxCount])
+    .interpolator(d3.interpolate('#3c3836', '#fabd2f'));
+
+  // Fit to fixed mainland bbox — not to the feature collection itself
+  const projection = d3.geoMercator().fitExtent([[4, 4], [width - 4, height - 4]], _AUS_BBOX);
+  const path = d3.geoPath().projection(projection);
+  const tooltip = document.getElementById('map-tooltip');
+
+  const svg = d3.select(svgEl);
+  svg.selectAll('*').remove();
+
+  svg.selectAll('path')
+    .data(geoJson.features)
+    .enter().append('path')
+    .attr('d', path)
+    .attr('fill', d => {
+      const count = lookup[(d.properties[nameProp] || '').toLowerCase()] || 0;
+      return count > 0 ? colorScale(count) : '#3c3836';
+    })
+    .on('mousemove', (event, d) => {
+      const name  = d.properties[nameProp] || '';
+      const count = lookup[name.toLowerCase()] || 0;
+      tooltip.style.display = 'block';
+      tooltip.style.left    = (event.clientX + 12) + 'px';
+      tooltip.style.top     = (event.clientY - 28) + 'px';
+      tooltip.textContent   = count > 0 ? `${name}: ${count.toLocaleString()}` : name;
+    })
+    .on('mouseleave', () => { tooltip.style.display = 'none'; });
+}
+
+function renderMaps(stateCounts, electorateCounts) {
+  const hasSenate = Object.values(stateCounts      || {}).some(v => v > 0);
+  const hasHouse  = Object.values(electorateCounts || {}).some(v => v > 0);
+  const container = document.getElementById('maps-container');
+  container.classList.toggle('d-none', !hasSenate && !hasHouse);
+  if (hasSenate || hasHouse) {
+    // rAF ensures browser has laid out the newly-visible container before we measure
+    requestAnimationFrame(() => {
+      _renderChoropleth('senate-map',  _statesGeo,      stateCounts      || {}, 'STATE_NAME');
+      _renderChoropleth('house-map',   _electoratesGeo, electorateCounts || {}, 'electorateName');
+    });
+  }
+}
+── end MAPS ── */
+
+// ── Utilities ──────────────────────────────────────────────────────────────────
+function esc(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function showError(msg) {
+  const el = document.getElementById("error-alert");
+  el.textContent = msg;
+  el.classList.remove("d-none");
+}
+
+function hideError() {
+  document.getElementById("error-alert").classList.add("d-none");
+}
+
+function setLoading(on) {
+  _isLoading = on;
+  const btn      = document.getElementById("search-btn");
+  const clearBtn = document.getElementById("clear-btn");
+  const input    = document.getElementById("expr-input");
+  const pinInput = document.getElementById("pin-input");
+  const pinBtn   = document.getElementById("pin-search-btn");
+  const bar      = document.getElementById("progress-bar");
+  if (on) {
+    document.body.classList.add("app-loading");
+    if (btn)    { btn.disabled = true; btn.innerHTML = '<span class="loading-pulse">…</span>'; }
+    if (clearBtn) { clearBtn.disabled = true; }
+    if (pinBtn) { pinBtn.disabled = true; pinBtn.innerHTML = '<span class="loading-pulse">…</span>'; }
+    input.dataset.placeholder = input.placeholder;
+    input.placeholder = "Searching…";
+    if (pinInput) { pinInput.dataset.placeholder = pinInput.placeholder; pinInput.placeholder = "Searching…"; }
+    if (bar) bar.style.display = "block";
+  } else {
+    document.body.classList.remove("app-loading");
+    if (btn)    { btn.disabled = false; btn.textContent = "Search"; }
+    if (clearBtn) { clearBtn.disabled = false; }
+    if (pinBtn) { pinBtn.disabled = false; pinBtn.textContent = "Search"; }
+    input.placeholder = input.dataset.placeholder || input.placeholder;
+    if (pinInput) pinInput.placeholder = pinInput.dataset.placeholder || "New search…";
+    if (bar) bar.style.display = "none";
+  }
+}
+
+// ── Context (reading pane) ────────────────────────────────────────────────────
+function _isStageDirSpeech(sp) {
+  return /^the\s/i.test(sp.name)
+    || /^(mr|madam)\s+(speaker|deputy\s+speaker|acting\s+speaker|president|deputy\s+president|acting\s+president|chair)/i.test(sp.name)
+    || (sp.is_interject && sp.body.trim().length < 80);
+}
+
+// Walk backward from idx-1, return index of next non-stage speech, or -1
+function _prevSubstIdx(idx) {
+  for (let i = idx - 1; i >= 0; i--) {
+    if (!_isStageDirSpeech(_ctxSpeeches[i])) return i;
+  }
+  return -1;
+}
+
+// Walk forward from idx+1, return index of next non-stage speech, or -1
+function _nextSubstIdx(idx) {
+  for (let i = idx + 1; i < _ctxSpeeches.length; i++) {
+    if (!_isStageDirSpeech(_ctxSpeeches[i])) return i;
+  }
+  return -1;
+}
+
+function _renderContextWindow(scroll = true) {
+  const bodyEl = document.getElementById("reading-pane-body");
+  bodyEl.innerHTML = "";
+  const speeches = _ctxSpeeches;
+  const terms = extractSearchTerms(document.getElementById("expr-input").value.trim());
+
+  const canExpandAbove = _prevSubstIdx(_ctxStartIdx) !== -1;
+  const canExpandBelow = _nextSubstIdx(_ctxEndIdx)   !== -1;
+
+  if (canExpandAbove) {
+    const btn = document.createElement("div");
+    btn.className = "ctx-expand-btn";
+    btn.textContent = "↑ show earlier";
+    btn.onclick = () => {
+      const prev = _prevSubstIdx(_ctxStartIdx);
+      if (prev !== -1) _ctxStartIdx = prev;
+      _renderContextWindow(false);
+    };
+    bodyEl.appendChild(btn);
+  }
+
+  for (let i = _ctxStartIdx; i <= _ctxEndIdx; i++) {
+    const sp = speeches[i];
+    const isTarget = sp.match_id === _ctxMatchId;
+    const div = document.createElement("div");
+    div.className = "ctx-speech" + (isTarget ? " ctx-target" : "");
+    div.id = "ctx-" + sp.match_id;
+    const typeFlags = [
+      sp.is_question  ? "Q" : null,
+      sp.is_answer    ? "A" : null,
+      sp.is_interject ? "I" : null,
+    ].filter(Boolean).join(" ");
+    const ts = sp.time_stamp ? sp.time_stamp.slice(0, 5) : '';
+    const tsHtml = ts
+      ? `<span class="turn-time">${ts}${sp.time_est ? ' <span class="time-est">(est.)</span>' : ''}</span>`
+      : '';
+    div.innerHTML = `
+      <div class="ctx-speech-meta">
+        ${tsHtml}<strong>${esc(_fixName(sp.name, sp.gender))}</strong>
+        <span style="opacity:0.7"> · ${_partyBadge(sp.party)} · ${esc(sp.state_or_electorate)}${typeFlags ? " · " + typeFlags : ""}</span>
+      </div>
+      <div class="ctx-speech-body">${highlightTerms(sp.body, terms)}</div>`;
+    bodyEl.appendChild(div);
+  }
+
+  if (canExpandBelow) {
+    const btn = document.createElement("div");
+    btn.className = "ctx-expand-btn";
+    btn.textContent = "↓ show later";
+    btn.onclick = () => {
+      const next = _nextSubstIdx(_ctxEndIdx);
+      if (next !== -1) _ctxEndIdx = next;
+      _renderContextWindow(false);
+    };
+    bodyEl.appendChild(btn);
+  }
+
+  if (scroll) {
+    const headerEl = document.getElementById("reading-pane-header");
+    if (headerEl && headerEl.style.display !== 'none') {
+      headerEl.scrollIntoView({ block: 'start', behavior: 'instant' });
+    } else {
+      const pane = document.getElementById("reading-pane");
+      if (pane) pane.scrollTop = 0;
+    }
+  }
+}
+
+async function showContext(matchId, date, chamber) {
+  const bodyEl = document.getElementById("reading-pane-body");
+  bodyEl.innerHTML = `<div class="text-muted small" style="padding:20px;text-align:center">Loading…</div>`;
+
+  _ctxMatchId = matchId;
+
+  let data;
+  try {
+    const r = await fetch("/api/day_context", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, chamber }),
+    });
+    data = await r.json();
+  } catch (e) {
+    bodyEl.innerHTML = `<div class="text-muted small" style="padding:20px">Error loading context.</div>`;
+    return;
+  }
+
+  _ctxSpeeches = data.speeches || [];
+  _ctxTargetIdx = _ctxSpeeches.findIndex(sp => sp.match_id === matchId);
+  if (_ctxTargetIdx === -1) _ctxTargetIdx = 0;
+
+  // Initial window: just the selected speech turn
+  _ctxStartIdx = _ctxTargetIdx;
+  _ctxEndIdx   = _ctxTargetIdx;
+
+  _renderContextWindow();
+}
+</script>
+
+
+<div id="sidebar-backdrop" onclick="closeSidebar()"></div>
+
+
+<div id="filter-sheet-overlay" onclick="closeMobileSidebar()"></div>
+<div style="position:fixed;bottom:10px;right:14px;font-size:0.72rem;color:var(--tn-fg);opacity:0.5;pointer-events:none;z-index:50">&copy; Jeff Cumpston 2026</div>
+</body>
+</html>

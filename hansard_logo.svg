@@ -1,0 +1,37 @@
+<svg width="100%" viewBox="0 0 680 360" xmlns="http://www.w3.org/2000/svg">
+<style>
+.s1{fill:none;stroke:#555;stroke-linecap:round;stroke-linejoin:round;stroke-width:3;opacity:0.35}
+.s2{fill:none;stroke:#333;stroke-linecap:round;stroke-linejoin:round;stroke-width:6.5;opacity:0.45}
+.s3{fill:none;stroke:#111;stroke-linecap:round;stroke-linejoin:round;stroke-width:10;opacity:0.88}
+</style>
+
+<!-- left leg of caret -->
+<path class="s1" d="M 191 323 C 230 305 268 274 299 252 C 318 239 333 223 342 211"/>
+<path class="s2" d="M 189 322 C 228 304 265 272 297 251 C 316 238 331 221 341 210"/>
+<path class="s3" d="M 187 321 C 225 302 263 271 295 250 C 315 237 330 220 340 209"/>
+
+<!-- right leg of caret -->
+<path class="s1" d="M 342 211 C 352 222 369 238 390 255 C 420 277 455 299 497 323"/>
+<path class="s2" d="M 341 210 C 351 221 368 237 389 254 C 419 276 454 298 496 322"/>
+<path class="s3" d="M 340 209 C 350 220 367 236 388 253 C 418 275 453 297 495 321"/>
+
+<!-- pole -->
+<path class="s1" d="M 343 211 C 342 185 344 158 342 132 C 341 108 343 85 342 69"/>
+<path class="s2" d="M 341 210 C 340 184 342 157 341 131 C 340 107 341 84 340 68"/>
+<path class="s3" d="M 340 209 C 339 183 341 156 340 130 C 339 106 340 83 339 67"/>
+
+<!-- flag top edge -->
+<path class="s1" d="M 343 70 C 355 68 370 67 385 68 C 393 68 399 69 404 70"/>
+<path class="s2" d="M 341 69 C 353 67 368 66 383 67 C 391 67 397 68 402 69"/>
+<path class="s3" d="M 340 67 C 352 65 367 64 382 65 C 390 65 396 66 401 68"/>
+
+<!-- flag right edge -->
+<path class="s1" d="M 404 70 C 405 80 404 92 405 103 C 405 106 404 108 404 110"/>
+<path class="s2" d="M 402 69 C 403 79 402 91 403 102 C 403 105 402 107 403 109"/>
+<path class="s3" d="M 401 68 C 402 78 401 90 402 101 C 402 104 401 107 401 110"/>
+
+<!-- flag bottom edge -->
+<path class="s1" d="M 404 110 C 393 111 378 111 363 110 C 353 110 345 110 342 110"/>
+<path class="s2" d="M 403 109 C 392 110 377 110 362 109 C 352 109 344 109 341 109"/>
+<path class="s3" d="M 401 110 C 390 111 375 111 360 110 C 350 110 342 110 340 110"/>
+</svg>

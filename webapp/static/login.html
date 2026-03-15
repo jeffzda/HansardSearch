@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hansard Search — Login</title>
+  <style>
+    :root {
+      --tn-bg:       #282828;
+      --tn-bg-dark:  #1d2021;
+      --tn-bg-hi:    #3c3836;
+      --tn-bg-hi2:   #504945;
+      --tn-fg:       #ebdbb2;
+      --tn-fg-dim:   #d5c4a1;
+      --tn-comment:  #928374;
+      --tn-blue:     #83a598;
+      --tn-teal:     #8ec07c;
+      --tn-red:      #fb4934;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--tn-bg-dark);
+      color: var(--tn-fg);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 0.9rem;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .card {
+      background: var(--tn-bg);
+      border: 1px solid var(--tn-bg-hi2);
+      border-radius: 8px;
+      padding: 2rem 2.5rem;
+      width: 100%;
+      max-width: 380px;
+    }
+    .title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--tn-fg);
+      margin-bottom: 0.25rem;
+    }
+    .subtitle {
+      font-size: 0.78rem;
+      color: var(--tn-comment);
+      margin-bottom: 1.75rem;
+    }
+    label {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--tn-comment);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.3rem;
+    }
+    input[type="email"],
+    input[type="password"] {
+      width: 100%;
+      background: var(--tn-bg-hi);
+      border: 1px solid var(--tn-bg-hi2);
+      border-radius: 5px;
+      color: var(--tn-fg);
+      padding: 9px 12px;
+      font-size: 0.9rem;
+      outline: none;
+      margin-bottom: 1.1rem;
+    }
+    input[type="email"]:focus,
+    input[type="password"]:focus {
+      border-color: var(--tn-blue);
+      box-shadow: 0 0 0 2px rgba(131,165,152,.15);
+    }
+    button[type="submit"] {
+      width: 100%;
+      background: var(--tn-blue);
+      border: none;
+      border-radius: 5px;
+      color: var(--tn-bg-dark);
+      font-size: 0.9rem;
+      font-weight: 700;
+      padding: 10px;
+      cursor: pointer;
+      margin-top: 0.25rem;
+    }
+    button[type="submit"]:hover { opacity: 0.9; }
+    button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+    #error-msg {
+      background: rgba(251,73,52,.12);
+      border: 1px solid rgba(251,73,52,.3);
+      border-radius: 4px;
+      color: var(--tn-red);
+      font-size: 0.82rem;
+      padding: 8px 12px;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .password-wrap { position: relative; margin-bottom: 1.1rem; }
+    .password-wrap input { margin-bottom: 0; }
+    .toggle-pw {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--tn-comment); cursor: pointer;
+      font-size: 0.78rem; padding: 2px 4px;
+    }
+    .toggle-pw:hover { color: var(--tn-blue); }
+    .footer {
+      margin-top: 1.5rem;
+      font-size: 0.75rem;
+      color: var(--tn-comment);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="title">HANSARD SEARCH</div>
+    <div class="subtitle">Australian Federal Parliament · House &amp; Senate · 1998–2025</div>
+
+    <div id="error-msg"></div>
+
+    <form id="login-form" onsubmit="doLogin(event)">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" autocomplete="email" required autofocus />
+
+      <label for="password">Password</label>
+      <div class="password-wrap">
+        <input type="password" id="password" name="password" autocomplete="current-password" required style="padding-right:2.5rem" />
+        <button type="button" class="toggle-pw" onclick="togglePw()" title="Show/hide password">Show</button>
+      </div>
+
+      <button type="submit" id="submit-btn">Sign in</button>
+    </form>
+
+    <div class="footer">Not registered? <a href="/request-access" style="color:var(--tn-blue)">Request access</a></div>
+  </div>
+
+  <script>
+    // Show expired message if redirected with ?expired=1
+    if (new URLSearchParams(location.search).get("expired") === "1") {
+      const el = document.getElementById("error-msg");
+      el.textContent = "Your access period has expired. Contact Jeff to renew.";
+      el.style.display = "block";
+    }
+
+    function togglePw() {
+      const input = document.getElementById("password");
+      const btn = document.querySelector(".toggle-pw");
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      btn.textContent = show ? "Hide" : "Show";
+    }
+
+    async function doLogin(e) {
+      e.preventDefault();
+      const btn = document.getElementById("submit-btn");
+      const errEl = document.getElementById("error-msg");
+      errEl.style.display = "none";
+      btn.disabled = true;
+      btn.textContent = "Signing in…";
+
+      const email    = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      try {
+        const r = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await r.json();
+        if (r.ok) {
+          window.location.href = "/";
+        } else {
+          errEl.textContent = data.error || "Login failed.";
+          errEl.style.display = "block";
+          btn.disabled = false;
+          btn.textContent = "Sign in";
+        }
+      } catch {
+        errEl.textContent = "Network error. Please try again.";
+        errEl.style.display = "block";
+        btn.disabled = false;
+        btn.textContent = "Sign in";
+      }
+    }
+  </script>
+</body>
+</html>

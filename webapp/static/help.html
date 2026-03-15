@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hansard Search — Help</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" />
+  <style>
+    :root {
+      --tn-bg:       #282828;
+      --tn-bg-dark:  #1d2021;
+      --tn-bg-hi:    #3c3836;
+      --tn-bg-hi2:   #504945;
+      --tn-fg:       #ebdbb2;
+      --tn-fg-dim:   #d5c4a1;
+      --tn-comment:  #928374;
+      --tn-blue:     #83a598;
+      --tn-green:    #b8bb26;
+      --tn-teal:     #8ec07c;
+      --tn-yellow:   #fabd2f;
+      --tn-orange:   #fe8019;
+      --tn-red:      #fb4934;
+    }
+
+    body { font-size: 0.9rem; background-color: var(--tn-bg); color: var(--tn-fg); }
+    a { color: var(--tn-blue); }
+    a:hover { color: var(--tn-teal); }
+
+    #header-bar { background: var(--tn-bg-dark) !important; color: var(--tn-fg); border-bottom: 1px solid var(--tn-bg-hi2); }
+
+    h2 { color: var(--tn-fg); font-size: 1.3rem; font-weight: 700; margin-top: 2.5rem; margin-bottom: 1rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--tn-bg-hi2); }
+    h3 { color: var(--tn-blue); font-size: 1rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+    h4 { color: var(--tn-teal); font-size: 0.9rem; font-weight: 600; margin-top: 1.2rem; margin-bottom: 0.3rem; }
+    p  { color: var(--tn-fg-dim); line-height: 1.7; }
+    li { color: var(--tn-fg-dim); line-height: 1.7; margin-bottom: 0.25rem; }
+    strong { color: var(--tn-fg); }
+
+    code {
+      color: var(--tn-teal);
+      background: var(--tn-bg-hi);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 0.85em;
+    }
+
+    .example-block {
+      background: var(--tn-bg-hi);
+      border-left: 3px solid var(--tn-blue);
+      border-radius: 0 4px 4px 0;
+      padding: 10px 14px;
+      margin: 0.75rem 0;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: var(--tn-teal);
+    }
+
+    .callout {
+      background: var(--tn-bg-hi);
+      border: 1px solid var(--tn-bg-hi2);
+      border-radius: 5px;
+      padding: 12px 16px;
+      margin: 1rem 0;
+      color: var(--tn-fg-dim);
+    }
+    .callout strong { color: var(--tn-yellow); }
+
+    .operator-table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; }
+    .operator-table th { color: var(--tn-comment); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 10px; border-bottom: 1px solid var(--tn-bg-hi2); text-align: left; }
+    .operator-table td { padding: 7px 10px; border-bottom: 1px solid var(--tn-bg-hi); color: var(--tn-fg-dim); vertical-align: top; }
+    .operator-table td:first-child { font-family: monospace; color: var(--tn-teal); white-space: nowrap; }
+
+    .toc { background: var(--tn-bg-dark); border: 1px solid var(--tn-bg-hi2); border-radius: 5px; padding: 16px 20px; margin-bottom: 2rem; }
+    .toc-title { color: var(--tn-comment); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 0.6rem; }
+    .toc a { color: var(--tn-blue); text-decoration: none; font-size: 0.88rem; }
+    .toc a:hover { color: var(--tn-teal); text-decoration: underline; }
+    .toc li { margin-bottom: 0.2rem; }
+    .toc .toc-sub { padding-left: 1.2rem; }
+    .toc .toc-sub li { color: var(--tn-comment); font-size: 0.83rem; }
+
+    .badge-senate { background: var(--tn-blue); color: var(--tn-bg-dark); font-size: 0.7rem; font-weight: 700; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+    .badge-house  { background: var(--tn-orange); color: var(--tn-bg-dark); font-size: 0.7rem; font-weight: 700; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+
+    .content-wrap { max-width: 800px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+    hr.section-rule { border-color: var(--tn-bg-hi2); margin: 3rem 0 0; }
+
+    .stat-row { display: flex; gap: 2rem; flex-wrap: wrap; margin: 1rem 0; }
+    .stat-box { background: var(--tn-bg-hi); border-radius: 5px; padding: 12px 18px; min-width: 140px; }
+    .stat-num { font-size: 1.4rem; font-weight: 700; color: var(--tn-yellow); font-family: monospace; }
+    .stat-label { font-size: 0.78rem; color: var(--tn-comment); margin-top: 2px; }
+  </style>
+</head>
+<body>
+
+<div id="header-bar" class="py-2 px-4 d-flex align-items-center gap-3">
+  <a href="/" class="text-decoration-none"><strong class="fs-5" style="color:var(--tn-fg)">HANSARD SEARCH</strong></a>
+  <span class="small text-secondary" style="opacity:0.5">v0.1</span>
+  <span class="small text-secondary" style="opacity:0.65">Australian Federal Parliament · House &amp; Senate · 1998–2025</span>
+  <span class="small ms-auto" style="color:var(--tn-comment)">Help &amp; Methodology</span>
+</div>
+
+<div class="content-wrap">
+
+  <!-- Table of contents -->
+  <div class="toc mt-4">
+    <div class="toc-title">Contents</div>
+    <ul class="list-unstyled mb-0">
+      <li><a href="#how-to">How to Search</a></li>
+      <ul class="toc-sub list-unstyled">
+        <li><a href="#basic">Basic search</a></li>
+        <li><a href="#boolean">Boolean operators</a></li>
+        <li><a href="#related">Related terms</a></li>
+        <li><a href="#filters">Filters</a></li>
+        <li><a href="#results">Reading results</a></li>
+        <li><a href="#download">Downloading results</a></li>
+      </ul>
+      <li class="mt-1"><a href="#methodology">Methodology</a></li>
+      <ul class="toc-sub list-unstyled">
+        <li><a href="#source">Source data</a></li>
+        <li><a href="#coverage">Coverage</a></li>
+        <li><a href="#speech-turns">What is a speech turn?</a></li>
+        <li><a href="#enrichment">Member enrichment</a></li>
+        <li><a href="#validation">Validation</a></li>
+        <li><a href="#limitations">Known limitations</a></li>
+      </ul>
+    </ul>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <h2 id="how-to">How to Search</h2>
+
+  <h3 id="basic">Basic search</h3>
+  <p>Type a word or phrase into the search bar and press <strong>Enter</strong> or click <strong>Search</strong>. Single words do not need quotes. Multi-word phrases must be enclosed in single quotes.</p>
+
+  <div class="example-block">'climate change'</div>
+  <div class="example-block">renewables</div>
+
+  <p>The search is <strong>case-sensitive by default</strong>. Toggle the case-sensitivity checkbox in the sidebar if you want case-insensitive matching. Case-insensitive searches are slower on large result sets.</p>
+
+  <h3 id="boolean">Boolean operators</h3>
+  <p>Combine terms using boolean logic to build precise queries.</p>
+
+  <table class="operator-table">
+    <thead>
+      <tr><th>Operator</th><th>Symbol</th><th>Meaning</th><th>Example</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>AND</td><td><code>&amp;</code></td><td>Both terms must appear in the speech</td><td><code>'climate change' &amp; 'fuel subsidies'</code></td></tr>
+      <tr><td>OR</td><td><code>|</code></td><td>Either term may appear</td><td><code>'global warming' | 'climate crisis'</code></td></tr>
+      <tr><td>NOT</td><td><code>!</code></td><td>Term must not appear</td><td><code>'nuclear energy' &amp; !'nuclear waste'</code></td></tr>
+      <tr><td>Grouping</td><td><code>( )</code></td><td>Control evaluation order</td><td><code>('climate change' | 'global warming') &amp; 'fuel subsidies'</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Tip:</strong> Without parentheses, <code>&amp;</code> binds more tightly than <code>|</code> — the same precedence as multiplication vs addition in arithmetic. Use parentheses whenever the logic might be ambiguous.
+  </div>
+
+  <h4>Example queries</h4>
+  <div class="example-block">('climate change' | 'global warming') &amp; 'fuel subsidies'</div>
+  <div class="example-block">'first nations' &amp; ('land rights' | 'native title') &amp; !'Northern Territory'</div>
+  <div class="example-block">'WorkChoices' | 'industrial relations' | 'Fair Work'</div>
+
+  <h3 id="related">Related terms</h3>
+  <p>After a search, a <strong>Related</strong> panel appears below the search bar. It suggests alternative phrasings, synonyms, and abbreviations for each term in your query — one group of suggestions per term.</p>
+  <p>Suggestions are generated in two stages. First, the most frequently co-occurring terms from your actual search results are extracted from the corpus. These are then passed to an AI model as context, so suggestions are grounded in the language actually used in Australian parliamentary debate rather than generic synonyms.</p>
+  <p>Click a suggestion chip to add it to your search. The chip turns green and the full expanded query is shown in small text below the search bar. Click it again to remove it. The boolean structure of your original expression is preserved — each alias is inserted inline alongside its source term using an OR group.</p>
+
+  <div class="callout">
+    <strong>Example:</strong> If your expression is <code>('climate change' | 'global warming') &amp; 'fuel subsidies'</code> and you click <em>climate emergency</em> as an alias for <em>climate change</em>, the effective query becomes <code>('climate change' | 'climate emergency' | 'global warming') &amp; 'fuel subsidies'</code>.
+  </div>
+
+  <p>Related terms update automatically as you type — approximately 700ms after you pause. Only new or changed terms trigger a new fetch; unchanged terms keep their existing suggestions.</p>
+
+  <h3 id="filters">Filters</h3>
+  <p>The sidebar contains metadata filters that narrow results without changing your search expression.</p>
+
+  <h4>Chamber</h4>
+  <p>Filter to <span class="badge-senate">Senate</span>, <span class="badge-house">House</span>, or both. Defaults to both chambers.</p>
+
+  <h4>Date range</h4>
+  <p>Restrict results to a specific date range. Dates are in YYYY-MM-DD format. Coverage runs from 1998-01-01 to mid-2025.</p>
+
+  <h4>Party</h4>
+  <p>Filter to speeches by members of a specific party. Party membership is assigned as at the date of the speech, so members who changed parties mid-term are correctly attributed.</p>
+
+  <h4>Speaker, state/electorate</h4>
+  <p>Partial-match text filters. Speaker matches on the member's display name; state/electorate matches on their state (Senate) or electorate (House).</p>
+
+  <h4>Government / Opposition</h4>
+  <p>Filter to speeches made while the member's party was in government or in opposition. This is determined at the chamber level by the date of the speech.</p>
+
+  <h4>Gender</h4>
+  <p>Filter to speeches by female, male, or non-binary members.</p>
+
+  <h4>Speech type</h4>
+  <p>Filter by the nature of the speech turn:</p>
+  <ul>
+    <li><strong>Question</strong> — a question put to the government (includes Question Time)</li>
+    <li><strong>Answer</strong> — a minister's response to a question</li>
+    <li><strong>First speech</strong> — a member's inaugural speech to the chamber</li>
+    <li><strong>No interjections</strong> — exclude turns that are purely interjections</li>
+    <li><strong>Main chamber only</strong> — exclude Federation Chamber / Main Committee proceedings</li>
+  </ul>
+
+  <h4>Results per page</h4>
+  <p>Choose 10, 20, 50, or 100 results per page. Larger pages are slower to render but reduce pagination.</p>
+
+  <h3 id="results">Reading results</h3>
+  <p>Each result card shows:</p>
+  <ul>
+    <li>Chamber badge, speaker name, and date</li>
+    <li>Party, state or electorate, government/opposition status, and speech type badges</li>
+    <li>A 280-character preview of the speech body</li>
+  </ul>
+  <p>Click <strong>▶ expand</strong> to read the full speech text. Matched search terms are highlighted in the expanded view. Click again to collapse.</p>
+  <p>Results can be sorted by date, speaker name, party, chamber, or government/opposition status using the pill buttons above the results list. Click the same pill twice to reverse the sort direction.</p>
+
+  <h3 id="download">Downloading results</h3>
+  <p>Click <strong>↓ CSV (10)</strong> to download the first 10 results of your current search as a comma-separated file. The download respects all active filters and sort order. Columns include: date, chamber, speaker name, party, state/electorate, government flag, speech type flags, full body text, name ID, unique ID, partyfacts ID, and matched terms.</p>
+  <p>The 10-result limit applies to the free version of this tool.</p>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <hr class="section-rule" />
+  <h2 id="methodology">Methodology</h2>
+
+  <h3 id="source">Source data</h3>
+  <p>The corpus is built from the official XML Hansard files published by the <a href="https://www.aph.gov.au/Parliamentary_Business/Hansard" target="_blank">Parliament of Australia</a>. These files are the authoritative record of proceedings in both chambers and are made available for download from the APH website.</p>
+  <p>Two XML schema versions are present across the date range:</p>
+  <ul>
+    <li><strong>v2.1</strong> — used for older files, featuring <code>&lt;talk&gt;</code> / <code>&lt;talker&gt;</code> / <code>&lt;para&gt;</code> structure</li>
+    <li><strong>v2.2</strong> — used for files from approximately 2021 onwards, featuring HPS span and anchor markup for attribution</li>
+  </ul>
+  <p>Both variants are parsed by separate schema-aware parsers. Body text extraction handles inline attribution spans (including capture of trailing <code>el.tail</code> text that schema-naive parsers discard) to maximise word coverage.</p>
+
+  <h3 id="coverage">Coverage and scale</h3>
+
+  <div class="stat-row">
+    <div class="stat-box"><div class="stat-num">549,864</div><div class="stat-label">Senate speech turns</div></div>
+    <div class="stat-box"><div class="stat-num">623,906</div><div class="stat-label">House speech turns</div></div>
+    <div class="stat-box"><div class="stat-num">1,482</div><div class="stat-label">Senate sitting days</div></div>
+    <div class="stat-box"><div class="stat-num">1,722</div><div class="stat-label">House sitting days</div></div>
+  </div>
+
+  <p>Coverage runs from the first sitting day of 1998 through to mid-2025. The corpus does not include committee Hansard, which is handled separately.</p>
+
+  <h3 id="speech-turns">What is a speech turn?</h3>
+  <p>Each row in the corpus represents a single continuous speech turn — an uninterrupted block of text attributed to one speaker. A speech turn ends when the next speaker begins, or when the presiding officer intervenes. A single member may contribute many turns in a single sitting day across different debates.</p>
+  <p>Speech turns are distinct from <em>speeches</em> in the colloquial sense. A minister answering a question in Question Time may have a turn of a single sentence; a second reading contribution may run to several thousand words. Both are single rows.</p>
+  <p>Interjections — short interruptions attributed to a member while another member holds the floor — are captured as separate rows and can be filtered out using the <strong>No interjections</strong> filter.</p>
+
+  <h3 id="enrichment">Member enrichment</h3>
+
+  <h4>Member lookup</h4>
+  <p>Speaker name strings in the XML are resolved to a canonical member record using hand-curated lookup tables built from APH member lists. The Senate lookup covers 666 senators; the House lookup covers 1,280 members. Each record includes name, party, state or electorate, gender, and date-range information for members who served in multiple parliaments.</p>
+
+  <h4>Party attribution</h4>
+  <p>Party membership is assigned as at the date of the speech. Members who changed parties during their term — such as crossbenchers who moved between minor parties — are correctly attributed using dated party override entries in the lookup. A standardised party abbreviation is used throughout; common aliases (e.g. <em>Liberal National Party of Queensland</em> → <em>LNP</em>) are normalised.</p>
+
+  <h4>Gender</h4>
+  <p>Gender is sourced from Wikidata via SPARQL query, matched on the member's Wikidata QID. Where Wikidata records are absent or ambiguous, manual review has been applied.</p>
+
+  <h4>partyfacts ID</h4>
+  <p>Each party abbreviation is mapped to a <a href="https://partyfacts.herokuapp.com/" target="_blank">partyfacts</a> numeric ID where a verified match exists, enabling cross-national comparative research using the partyfacts dataset as a bridge.</p>
+
+  <h4>Government / opposition flag</h4>
+  <p>Each speech turn is flagged as government (1) or opposition/crossbench (0) based on whether the speaker's party held government in the relevant chamber on the date of the speech.</p>
+
+  <h3 id="validation">Validation</h3>
+  <p>Each sitting day file passes seven automated validation tests before inclusion in the corpus:</p>
+  <ul>
+    <li><strong>T1 — Date match:</strong> The date in the file header matches the session calendar.</li>
+    <li><strong>T2 — Consecutive duplicates:</strong> No two adjacent turns by the same speaker are identical (flags copy-paste artifacts in the XML).</li>
+    <li><strong>T3 — Time expired:</strong> Turns flagged as "time expired" procedural text are excluded from body content.</li>
+    <li><strong>T4 — Party/state multiplicity:</strong> A single member does not appear with conflicting party or state values on the same day.</li>
+    <li><strong>T5 — Unknown name IDs:</strong> All speaker name strings resolve to a known member record.</li>
+    <li><strong>T6 — Birth/death dates:</strong> No speech is attributed to a member outside their known lifespan.</li>
+    <li><strong>T7 — Active on date:</strong> No speech is attributed to a member outside their period of service in the chamber.</li>
+  </ul>
+  <p>Current validation pass rates: <strong>Senate 76.3%</strong> of sitting days fully clean; <strong>House 89.7%</strong>. Failures at the sitting-day level do not mean the day is excluded — they flag specific rows for review. The majority of failures are residual edge cases that do not affect the accuracy of the bulk of the corpus.</p>
+
+  <h3 id="limitations">Known limitations</h3>
+  <ul>
+    <li><strong>Garbled name IDs (Senate, ~78 cases):</strong> A small number of Senate XML files contain malformed speaker attribution tags (e.g. <code>XH4</code>, <code>/7E4</code>). These turns cannot be attributed to a member and are retained in the corpus with null member fields.</li>
+    <li><strong>Residual duplicate turns (~24 Senate, ~25 House):</strong> A small number of speech turns appear twice in the source XML. These are genuine artifacts in the official files and cannot be removed without risk of incorrectly deduplicating legitimate repeated quotations.</li>
+    <li><strong>Body text coverage:</strong> The word count of the corpus body text is approximately 0.3–0.7% below an independent reference corpus (Katz &amp; Alexander, Zenodo 2023) for Senate files, due to minor differences in how procedural text and interjection formatting is handled across schema versions.</li>
+    <li><strong>Committee Hansard:</strong> Committee hearings, estimates hearings, and joint committee proceedings are not included in this corpus. They are held in a separate dataset and are not yet searchable through this interface.</li>
+    <li><strong>Currency:</strong> The corpus covers proceedings up to mid-2025. Sittings after that date are not yet included.</li>
+  </ul>
+
+  <div class="callout" style="margin-top:2rem">
+    <strong>Reference:</strong> The independent Senate Hansard corpus used for validation benchmarking is: Lindsay Katz &amp; Ryan Alexander (2023). <em>Australian Senate Hansard 1998–2022</em>. Zenodo. <a href="https://zenodo.org/records/8121950" target="_blank">https://zenodo.org/records/8121950</a>
+  </div>
+
+</div><!-- /content-wrap -->
+</body>
+</html>

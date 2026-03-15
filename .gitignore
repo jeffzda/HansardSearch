@@ -1,0 +1,29 @@
+# Large data files — not tracked in git
+data/raw/
+data/output/
+data/ka_corpus/
+
+# Logs
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+
+# WSL Zone.Identifier sidecar files
+*:Zone.Identifier
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Secrets / env
+.env
+*.env
