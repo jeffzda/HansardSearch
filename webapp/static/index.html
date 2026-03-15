@@ -1127,6 +1127,7 @@ let _filterHintShown = false;  // true after first search hint has fired
 let _selectedAliases = new Map(); // Map<originalTerm, Set<alias>>
 let _lastAliasTerms = new Set();  // terms currently showing recommendation groups
 let _lastFullExpression = '';     // full alias-expanded expression from last search
+let _lastRawExpression  = '';     // raw typed expression (without alias expansion)
 let _selectedMatchId = null;      // match_id of currently selected result card
 let _ctxSpeeches   = [];          // all speeches from day_context for current selection
 let _ctxMatchId    = null;        // match_id of speech loaded in reading pane
@@ -2419,6 +2420,7 @@ async function doSearch(page) {
   const mainExpr   = inputEl.value.trim();
   const expression = buildFullExpression();
   _lastFullExpression = expression;
+  _lastRawExpression  = mainExpr;
   hideError();
 
   // Keep browser URL bar in sync so users can copy/share directly from the address bar
@@ -2517,20 +2519,25 @@ function renderResults(data) {
   _currentResults = data.results || [];
   _corpusSeeds = data.corpus_seeds || [];
 
-  // Query display (full expression, monospace)
+  // Query display: what the user typed
   const queryEl = document.getElementById("query-display");
-  if (_lastFullExpression) {
-    queryEl.textContent = _lastFullExpression;
+  if (_lastRawExpression) {
+    queryEl.textContent = _lastRawExpression;
     queryEl.classList.remove("d-none");
   } else {
     queryEl.classList.add("d-none");
   }
 
-  // Terms display: show alias-expanded expression in code style below the query
+  // Terms display: per-term union expansion (term | alias1 | alias2), one per line
   const termsEl = document.getElementById("query-terms-display");
-  const hasAliases = [..._selectedAliases.values()].some(s => s.size > 0);
-  if (_lastFullExpression && hasAliases) {
-    termsEl.innerHTML = `<code style="font-size:0.82rem">${esc(_lastFullExpression)}</code>`;
+  const termLines = [];
+  for (const [term, aliases] of _selectedAliases) {
+    if (!aliases.size) continue;
+    const parts = [`'${term}'`, ...[...aliases].map(a => `'${a}'`)];
+    termLines.push(`<code style="font-size:0.82rem">${esc(parts.join(" | "))}</code>`);
+  }
+  if (termLines.length) {
+    termsEl.innerHTML = termLines.join("<br>");
     termsEl.classList.remove("d-none");
   } else {
     termsEl.classList.add("d-none");
