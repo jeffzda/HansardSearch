@@ -197,7 +197,10 @@ def _build_name_display_map(lookup_base: Path) -> dict:
             nid = str(row.get("name_id", "")).strip()
             if not nid or nid in ("nan", "10000"):
                 continue
-            title   = _first(row, "title") or "Mr"
+            title   = _first(row, "title")
+            if not title:
+                gender = str(row.get("gender", "")).strip().lower()
+                title = "Ms" if gender == "female" else "Mr"
             surname = str(row.get("surname", "")).strip().upper()
             fname   = _first(row, "common_name", "first_name").title()
             if surname:
