@@ -469,7 +469,7 @@
     /* ── Loading lock ─────────────────────────────────────────────────────── */
     body.app-loading #sidebar,
     body.app-loading #sort-bar,
-    body.app-loading .chamber-row,
+    body.app-loading #search-controls,
     body.app-loading #alias-container {
       pointer-events: none;
       opacity: 0.45;
@@ -724,6 +724,19 @@
     <div id="expr-combined" class="d-none"></div>
     <!-- Row 3: controls -->
     <div id="search-controls">
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input" type="radio" name="f-chamber" id="ch-house" value="house" />
+        <label class="form-check-label small text-muted" for="ch-house">House <span class="filter-count"></span></label>
+      </div>
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input" type="radio" name="f-chamber" id="ch-senate" value="senate" />
+        <label class="form-check-label small text-muted" for="ch-senate">Senate <span class="filter-count"></span></label>
+      </div>
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input" type="radio" name="f-chamber" id="ch-both" value="both" checked />
+        <label class="form-check-label small text-muted" for="ch-both">Both</label>
+      </div>
+      <div style="width:1px;height:14px;background:var(--tn-bg-hi2);margin:0 2px;flex-shrink:0;"></div>
       <div class="form-check form-switch mb-0">
         <input class="form-check-input" type="checkbox" id="f-case-sensitive" />
         <label class="form-check-label small text-muted" for="f-case-sensitive">Case sensitive</label>
@@ -759,28 +772,13 @@
     <div id="main-top" class="p-3">
 
       <!-- Chamber radio -->
-      <div class="chamber-row mb-3 d-flex gap-3 align-items-center flex-wrap">
-        <strong class="me-1">Chamber:</strong>
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="radio" name="f-chamber" id="ch-both" value="both" checked />
-          <label class="form-check-label" for="ch-both">Both</label>
-        </div>
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="radio" name="f-chamber" id="ch-senate" value="senate" />
-          <label class="form-check-label" for="ch-senate">Senate <span class="filter-count"></span></label>
-        </div>
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="radio" name="f-chamber" id="ch-house" value="house" />
-          <label class="form-check-label" for="ch-house">House <span class="filter-count"></span></label>
-        </div>
-        <div class="ms-auto d-flex align-items-center gap-1">
-          <label class="small text-muted me-1">Per page:</label>
-          <select id="page-size" class="form-select form-select-sm" style="width:80px">
-            <option value="20" selected>20</option>
-            <option value="50">50</option>
-            <option value="100">100</option>
-          </select>
-        </div>
+      <div class="mb-2 d-flex align-items-center gap-1">
+        <label class="small text-muted me-1">Per page:</label>
+        <select id="page-size" class="form-select form-select-sm" style="width:80px">
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
       </div>
 
       <!-- Error alert -->
