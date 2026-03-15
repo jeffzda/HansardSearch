@@ -7,7 +7,7 @@ files, commit them with a descriptive message before ending the session. Stage
 specific files by name rather than `git add .` to avoid accidentally including
 generated or sensitive files.
 
-- Remote: not yet configured (local only)
+- Remote: https://github.com/jeffzda/HansardSearch.git
 - Sensitive files excluded from tracking: `webapp/.secret_key`, `webapp/users.db`, `webapp/activity_log.jsonl`
 - Large data directories excluded: `data/raw/`, `data/output/`
 
