@@ -550,6 +550,26 @@
       100% { background: transparent; }
     }
     #sidebar-tab.pulse { animation: sidebar-pulse 2.8s ease; }
+
+    @keyframes hint-in-out {
+      0%   { opacity: 0; transform: translateX(-6px); }
+      15%  { opacity: 1; transform: translateX(0); }
+      75%  { opacity: 1; transform: translateX(0); }
+      100% { opacity: 0; transform: translateX(-6px); }
+    }
+    #filter-hint {
+      display: none; position: fixed; left: 36px; top: 56px; z-index: 1050;
+      background: var(--tn-bg-hi2); color: var(--tn-fg);
+      font-size: 0.78rem; padding: 7px 11px; border-radius: 6px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.35); max-width: 220px; line-height: 1.4;
+      pointer-events: none;
+    }
+    #filter-hint::before {
+      content: ''; position: absolute; left: -6px; top: 12px;
+      border: 6px solid transparent; border-right-color: var(--tn-bg-hi2);
+      border-left: none;
+    }
+    #filter-hint.show { display: block; animation: hint-in-out 4s ease forwards; }
     #sidebar-tab span {
       writing-mode: vertical-rl; transform: rotate(180deg);
       font-size: 0.68rem; letter-spacing: 0.13em; text-transform: uppercase;
@@ -1108,6 +1128,7 @@ let _currentResults = [];      // results for current page (for client-side sort
 let _sortCol = null;           // active sort column key
 let _sortDir = "desc";         // "asc" | "desc"
 let _isLoading = false;        // true while a search request is in flight
+let _filterHintShown = false;  // true after first search hint has fired
 let _selectedAliases = new Map(); // Map<originalTerm, Set<alias>>
 let _lastAliasTerms = new Set();  // terms currently showing recommendation groups
 let _lastFullExpression = '';     // full alias-expanded expression from last search
@@ -2477,6 +2498,12 @@ async function doSearch(page) {
     showError("Network error: " + err.message);
   } finally {
     setLoading(false);
+    if (!_filterHintShown) {
+      _filterHintShown = true;
+      const hint = document.getElementById("filter-hint");
+      hint.classList.add("show");
+      hint.addEventListener("animationend", () => hint.classList.remove("show"), { once: true });
+    }
     const tab = document.getElementById("sidebar-tab");
     tab.classList.remove("pulse");
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -3536,6 +3563,7 @@ async function showContext(matchId, date, chamber) {
 
 
 <div id="sidebar-backdrop" onclick="closeSidebar()"></div>
+<div id="filter-hint">Tip: refine your search using filters in the sidebar ←</div>
 
 
 <div id="filter-sheet-overlay" onclick="closeMobileSidebar()"></div>
