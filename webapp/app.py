@@ -1187,6 +1187,7 @@ def search():
             "in_gov": _safe_int(row.get("in_gov")),
             "is_question": _safe_int(row.get("question")),
             "is_answer": _safe_int(row.get("answer")),
+            "q_in_writing": _safe_int(row.get("q_in_writing")),
             "is_interject": _safe_int(row.get("interject")),
             "first_speech": _safe_int(row.get("first_speech")),
             "has_embedded_interject": _safe_bool(row.get("has_embedded_interject")),

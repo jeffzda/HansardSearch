@@ -2381,6 +2381,7 @@ function selectResult(matchId, date, chamber) {
           ${chamberBadge}
           <strong class="ms-1">${esc(_fixName(res.name, res.gender))}</strong>
           <span class="text-muted ms-1">· ${_partyBadge(res.party)} · ${esc(res.state_or_electorate)}</span>
+          ${buildTypeBadges(res) ? `<span class="ms-1">${buildTypeBadges(res)}</span>` : ''}
         </div>
         <div class="d-flex align-items-center gap-3">
           <a href="${_hansardUrl(res.date, res.chamber)}" target="_blank" rel="noopener"
@@ -2578,6 +2579,7 @@ function renderTableBody() {
       <div class="result-card-meta">
         ${_partyBadge(res.party)}
         <span>${esc(res.state_or_electorate)}</span>
+        ${buildTypeBadges(res)}
       </div>
       <p class="preview-text" style="font-size:0.74rem;color:var(--tn-fg-dim);margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4">${esc(res.body_preview)}</p>`;
 
@@ -2633,12 +2635,12 @@ function _partyBadge(party) {
 
 function buildTypeBadges(res) {
   const badges = [];
-  if (res.is_question)             badges.push('<span class="badge bg-info text-dark">Q</span>');
-  if (res.is_answer)               badges.push('<span class="badge bg-warning text-dark">A</span>');
-  if (res.is_interject)            badges.push('<span class="badge bg-secondary">I</span>');
-  if (res.first_speech)            badges.push('<span class="badge bg-danger">FS</span>');
-  if (res.has_embedded_interject)  badges.push('<span class="badge bg-light text-dark border">⌥I</span>');
-  return badges.join(" ") || '<span class="text-muted small">—</span>';
+  if (res.is_question && !res.q_in_writing) badges.push('<span class="badge bg-info text-dark">Question</span>');
+  if (res.q_in_writing)                     badges.push('<span class="badge bg-info text-dark">Written question</span>');
+  if (res.is_answer)                        badges.push('<span class="badge bg-warning text-dark">Answer</span>');
+  if (res.is_interject)                     badges.push('<span class="badge bg-secondary">Interjection</span>');
+  if (res.first_speech)                     badges.push('<span class="badge bg-danger">First speech</span>');
+  return badges.join(" ");
 }
 
 function buildDetailEl(res) {
