@@ -325,7 +325,7 @@ def _parse_body(body: etree._Element) -> list[dict]:
         if speaker is not None:
             # Flush previous utterance
             if current is not None and current.get("_parts"):
-                current["body"] = " ".join(current["_parts"]).strip()
+                current["body"] = "\n\n".join(current["_parts"]).strip()
                 del current["_parts"]
                 utterances.append(current)
 
@@ -344,7 +344,7 @@ def _parse_body(body: etree._Element) -> list[dict]:
 
     # Flush last utterance
     if current is not None and current.get("_parts"):
-        current["body"] = " ".join(current["_parts"]).strip()
+        current["body"] = "\n\n".join(current["_parts"]).strip()
         del current["_parts"]
         utterances.append(current)
 
@@ -456,7 +456,7 @@ def _v21_talks_to_rows(
         speaker, parts = _v21_extract_talk(talk)
         if speaker is None or not parts:
             continue
-        body = " ".join(parts).strip()
+        body = "\n\n".join(parts).strip()
         if not body:
             continue
 

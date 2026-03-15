@@ -334,7 +334,7 @@ class HouseParserV21:
                 if text:
                     body_parts.append(text)
 
-        body = " ".join(body_parts)
+        body = "\n\n".join(body_parts)
 
         # Extract start time from the chair-taking sentence
         time_match = re.search(
@@ -364,7 +364,7 @@ class HouseParserV21:
         if info is not None:
             ts = _normalise_time(_t(info, "time.stamp"))
         paras = [_all_text(p) for p in adj.iter("para")]
-        body = " ".join(p for p in paras if p)
+        body = "\n\n".join(p for p in paras if p)
         self._rows.append(self._make_row(
             name="stage direction",
             body=body,
@@ -470,7 +470,7 @@ class HouseParserV21:
                 if text:
                     body_parts.append(text)
 
-        body_raw = " ".join(body_parts)
+        body_raw = "\n\n".join(body_parts)
         body = re.sub(r"^[\u2014\-]\s*", "", body_raw).strip()
 
         is_question = 1 if tag == "question" else 0
@@ -549,7 +549,7 @@ class HouseParserV21:
                 text = _all_text(el)
                 if text:
                     parts.append(text)
-        body = " ".join(parts).strip()
+        body = "\n\n".join(parts).strip()
 
         self._rows.append(self._make_row(
             name=name_text or "stage direction",
@@ -580,7 +580,7 @@ class HouseParserV21:
                 chair_text = txt_val
                 break
 
-        body = " ".join(filter(None, [header_text, chair_text, result_text])).strip()
+        body = "\n\n".join(filter(None, [header_text, chair_text, result_text])).strip()
 
         self._rows.append(self._make_row(
             name="stage direction",
@@ -713,7 +713,7 @@ class HouseParserV22:
                         if m:
                             ts = _normalise_time(m.group(0))
 
-        body = " ".join(body_parts)
+        body = "\n\n".join(body_parts)
         return self._make_row(
             name="business start",
             body=body,
@@ -791,7 +791,7 @@ class HouseParserV22:
     def _parse_subdebate_text(self, node: etree._Element) -> None:
         """Emit a stage direction row for a <subdebate.text> procedural block."""
         parts = [_all_text(p).strip() for p in node.iter("p")]
-        body = " ".join(p for p in parts if p).strip()
+        body = "\n\n".join(p for p in parts if p).strip()
         if body:
             self._rows.append(self._make_row(
                 name="stage direction",
@@ -874,7 +874,7 @@ class HouseParserV22:
             if "HPS-DivisionPreamble" in p_class or "HPS-DivisionFooter" in p_class:
                 div_text = _all_text(p).strip()
                 if div_text:
-                    utterances.append({**current, "body": " ".join(current["body_parts"])})
+                    utterances.append({**current, "body": "\n\n".join(current["body_parts"])})
                     utterances.append({
                         "name": "stage direction",
                         "name_id": None,
@@ -899,7 +899,7 @@ class HouseParserV22:
                         continue
 
                     # Flush current utterance — only emit if there is body text
-                    body_so_far = " ".join(current["body_parts"]).strip()
+                    body_so_far = "\n\n".join(current["body_parts"]).strip()
                     if body_so_far:
                         utterances.append({**current, "body": body_so_far})
 
@@ -950,7 +950,7 @@ class HouseParserV22:
                     current["body_parts"].append(para_body)
 
         # Flush last utterance — only emit if there is body text
-        body_so_far = " ".join(current["body_parts"]).strip()
+        body_so_far = "\n\n".join(current["body_parts"]).strip()
         if body_so_far:
             utterances.append({**current, "body": body_so_far})
 
@@ -1069,7 +1069,7 @@ class HouseParserV22:
                     if m:
                         ts = _normalise_time(m.group(1))
 
-        body = " ".join(parts)
+        body = "\n\n".join(parts)
         self._rows.append(self._make_row(
             name="stage direction",
             body=body,
