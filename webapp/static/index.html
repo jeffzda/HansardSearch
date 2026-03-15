@@ -690,6 +690,33 @@
       </div>
     </div>
   </div>
+  <div style="position:relative; flex-shrink:0;">
+    <button id="search-info-btn" onclick="toggleSearchInfo(event)"
+      title="Search syntax help"
+      style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:50%;color:var(--tn-comment);
+             cursor:pointer;font-size:0.72rem;font-weight:700;line-height:1;
+             width:18px;height:18px;padding:0;display:flex;align-items:center;justify-content:center;
+             opacity:0.7;flex-shrink:0;">i</button>
+    <div id="search-info-popup" class="d-none"
+      style="position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);
+             min-width:320px;max-width:420px;z-index:2000;
+             background:var(--tn-bg-hi);border:1px solid var(--tn-bg-hi2);
+             border-radius:6px;padding:12px 14px;font-size:0.82rem;
+             box-shadow:0 4px 16px rgba(0,0,0,0.35);">
+      <div style="font-weight:600;margin-bottom:6px;color:var(--tn-fg)">Search syntax</div>
+      <div style="color:var(--tn-fg-dim);line-height:1.6">
+        Quoted phrases, <code>AND</code> (<code>&amp;</code>), <code>OR</code> (<code>|</code>), parentheses.<br>
+        Terms without quotes match any word form.<br><br>
+        <span style="color:var(--tn-comment);font-size:0.78rem">Example — click to run:</span><br>
+        <code class="example-query"
+          style="display:inline-block;margin-top:4px;cursor:pointer"
+          title="Click to run this search"
+          onclick="runExampleSearch(&quot;('climate change' | agriculture) &amp; 'fuel subsidies'&quot;); toggleSearchInfo()">
+          ('climate change' | agriculture) &amp; 'fuel subsidies'
+        </code>
+      </div>
+    </div>
+  </div>
 
   <button id="mobile-filter-btn" onclick="openMobileSidebar()" class="small ms-auto me-2" style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:5px;color:var(--tn-fg);cursor:pointer;padding:4px 10px;font-size:0.82rem;align-items:center;gap:5px;" title="Filters">⚙ Filters</button>
   <button id="theme-toggle" onclick="toggleTheme()" class="small me-3" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75" title="Toggle light/dark mode"></button>
@@ -706,10 +733,6 @@
 
       <div class="mb-2">
         <div class="d-flex align-items-center gap-3 mt-1">
-          <div class="small text-muted">
-            Boolean syntax: quoted terms, AND (&amp;), OR (|), parentheses.
-            Example: <code class="example-query" title="Click to run this search" onclick="runExampleSearch(&quot;('climate change' | agriculture) &amp; 'fuel subsidies'&quot;)">('climate change' | agriculture) &amp; 'fuel subsidies'</code>
-          </div>
           <div class="form-check form-switch mb-0 flex-shrink-0">
             <input class="form-check-input" type="checkbox" id="f-case-sensitive" />
             <label class="form-check-label small text-muted" for="f-case-sensitive">Case sensitive</label>
@@ -3029,6 +3052,19 @@ function toggleAliases() {
   const hidden = container.classList.toggle("d-none");
   btn.classList.toggle("active", !hidden);
 }
+
+function toggleSearchInfo(e) {
+  if (e) e.stopPropagation();
+  document.getElementById("search-info-popup").classList.toggle("d-none");
+}
+document.addEventListener("click", e => {
+  const popup = document.getElementById("search-info-popup");
+  if (popup && !popup.classList.contains("d-none") &&
+      !popup.contains(e.target) &&
+      e.target.id !== "search-info-btn") {
+    popup.classList.add("d-none");
+  }
+});
 
 // ── Chart ──────────────────────────────────────────────────────────────────────
 let _chart = null;
