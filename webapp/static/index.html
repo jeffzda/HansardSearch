@@ -3476,9 +3476,9 @@ function _renderContextWindow(scroll = true) {
     div.className = "ctx-speech" + (isTarget ? " ctx-target" : "");
     div.id = "ctx-" + sp.match_id;
     const typeFlags = [
-      sp.is_question  ? "Q" : null,
-      sp.is_answer    ? "A" : null,
-      sp.is_interject ? "I" : null,
+      sp.is_question  ? '<span class="badge bg-info text-dark">Q</span>'    : null,
+      sp.is_answer    ? '<span class="badge bg-warning text-dark">A</span>' : null,
+      sp.is_interject ? '<span class="badge bg-secondary">I</span>'         : null,
     ].filter(Boolean).join(" ");
     const ts = sp.time_stamp ? sp.time_stamp.slice(0, 5) : '';
     const tsHtml = ts
@@ -3489,6 +3489,7 @@ function _renderContextWindow(scroll = true) {
         <strong>${esc(_fixName(sp.name, sp.gender))}</strong>
         <span style="opacity:0.7">${_partyBadge(sp.party)}</span>
         <span style="opacity:0.7">${esc(sp.state_or_electorate)}</span>
+        ${typeFlags}
         ${tsHtml}
       </div>
       <div class="ctx-speech-body">${highlightTerms(sp.body, terms)}</div>`;
