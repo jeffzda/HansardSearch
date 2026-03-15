@@ -542,10 +542,14 @@
     }
     #sidebar-tab:hover { background: var(--tn-bg-hi); }
     @keyframes sidebar-pulse {
-      0%,100% { background: transparent; }
-      25%,75%  { background: var(--tn-bg-hi2); }
+      0%   { background: transparent; }
+      15%  { background: var(--tn-bg-hi2); }
+      30%  { background: transparent; }
+      55%  { background: var(--tn-bg-hi2); }
+      75%  { background: transparent; }
+      100% { background: transparent; }
     }
-    #sidebar-tab.pulse { animation: sidebar-pulse 0.9s ease; }
+    #sidebar-tab.pulse { animation: sidebar-pulse 1.4s ease; }
     #sidebar-tab span {
       writing-mode: vertical-rl; transform: rotate(180deg);
       font-size: 0.68rem; letter-spacing: 0.13em; text-transform: uppercase;
