@@ -254,6 +254,7 @@
       #main-results.mobile-open { display: flex !important; }
       #main-results.mobile-open #reading-pane {
         flex: 1; overflow-y: auto; min-height: 0;
+        overscroll-behavior: contain;
       }
     }
 
@@ -2505,6 +2506,7 @@ function closeMobileReadingPane() {
   pane.style.transition = '';
   pane.style.transform = '';
   pane.classList.remove('mobile-open');
+  document.body.style.overflow = '';
 }
 
 // Swipe left or right anywhere on the reading pane to close it, with a
@@ -2616,6 +2618,7 @@ function selectResult(matchId, date, chamber) {
   // On mobile: open reading pane as full-screen overlay
   if (window.innerWidth < 520) {
     document.getElementById('main-results').classList.add('mobile-open');
+    document.body.style.overflow = 'hidden';
   }
 
   showContext(matchId, date, chamber);
