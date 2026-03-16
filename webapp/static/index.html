@@ -3147,13 +3147,21 @@ async function updateAliasesIncremental() {
   _lastAliasTerms = newTerms;
   updateCombinedExpr();
 
-  if (termsToFetch.length) {
-    await Promise.all(termsToFetch.map(term => fetchAndRenderGroup(term)));
+  // Flip button immediately once placeholder groups exist — don't wait for Claude API
+  const badge = document.getElementById("alias-badge");
+  if (groups.children.length > 0) {
+    badge.textContent = groups.children.length + " ";
+    _setSearchBtnMode("related");
   }
 
-  // Update badge; flip button mode based on whether aliases are available
+  if (termsToFetch.length) {
+    try {
+      await Promise.all(termsToFetch.map(term => fetchAndRenderGroup(term)));
+    } catch (e) { /* individual fetch failures are handled inside fetchAndRenderGroup */ }
+  }
+
+  // Re-check after fetch completes — update count, snap back if nothing remains
   const count = groups.children.length;
-  const badge = document.getElementById("alias-badge");
   if (count > 0) {
     badge.textContent = count + " ";
     _setSearchBtnMode("related");
