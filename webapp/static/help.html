@@ -95,7 +95,7 @@
 <div id="header-bar" class="py-2 px-4 d-flex align-items-center gap-3">
   <a href="/" class="text-decoration-none"><strong class="fs-5" style="color:var(--tn-fg)">HANSARD SEARCH</strong></a>
   <span class="small text-secondary" style="opacity:0.5">v0.1</span>
-  <span class="small text-secondary" style="opacity:0.65">Australian Federal Parliament · House &amp; Senate · 1998–2025</span>
+  <span class="small text-secondary" style="opacity:0.65">Australian Federal Parliament · House &amp; Senate · 1998–2026</span>
   <span class="small ms-auto" style="color:var(--tn-comment)">Help &amp; Methodology</span>
 </div>
 
@@ -105,16 +105,21 @@
   <div class="toc mt-4">
     <div class="toc-title">Contents</div>
     <ul class="list-unstyled mb-0">
-      <li><a href="#how-to">How to Search</a></li>
+      <li><a href="#quick-start">1. Quick start</a></li>
+      <li><a href="#layout">2. The layout</a></li>
+      <li><a href="#searching">3. Searching</a></li>
       <ul class="toc-sub list-unstyled">
         <li><a href="#basic">Basic search</a></li>
         <li><a href="#boolean">Boolean operators</a></li>
-        <li><a href="#related">Related terms</a></li>
-        <li><a href="#filters">Filters</a></li>
-        <li><a href="#results">Reading results</a></li>
-        <li><a href="#download">Downloading results</a></li>
       </ul>
-      <li class="mt-1"><a href="#methodology">Methodology</a></li>
+      <li><a href="#add-terms">4. Add terms (related terms)</a></li>
+      <li><a href="#result-cards">5. Reading results — cards</a></li>
+      <li><a href="#reading-pane">6. The reading pane &amp; day context</a></li>
+      <li><a href="#chart">7. The timeseries chart</a></li>
+      <li><a href="#filters">8. Filters</a></li>
+      <li><a href="#download">9. Downloading</a></li>
+      <li><a href="#mobile">10. Mobile</a></li>
+      <li class="mt-1"><a href="#methodology">11. Methodology</a></li>
       <ul class="toc-sub list-unstyled">
         <li><a href="#source">Source data</a></li>
         <li><a href="#coverage">Coverage</a></li>
@@ -128,7 +133,23 @@
 
 
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
-  <h2 id="how-to">How to Search</h2>
+  <h2 id="quick-start">1. Quick start</h2>
+  <p>Type a word or phrase, press <strong>Enter</strong>. Click any result card to read the speech in context. That's it — everything else is optional.</p>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <h2 id="layout">2. The layout</h2>
+  <p>The interface has three main areas:</p>
+  <ul>
+    <li><strong>Left — filter sidebar.</strong> On desktop, open it with the <strong>FILTERS</strong> tab on the left edge. On mobile, tap the floating <strong>⊟</strong> button at bottom-left.</li>
+    <li><strong>Centre — result cards.</strong> Matching speech turns, sorted by date by default. Sort pills above the list let you reorder by speaker, party, or chamber.</li>
+    <li><strong>Right — reading pane.</strong> Opens when you click a card. Shows every speech turn for that sitting day, with the selected turn highlighted.</li>
+  </ul>
+  <p>On mobile, results fill the screen. Tap a card to open the reading pane full-screen. Tap <strong>← Back</strong> to return to results.</p>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <h2 id="searching">3. Searching</h2>
 
   <h3 id="basic">Basic search</h3>
   <p>Type a word or phrase into the search bar and press <strong>Enter</strong> or click <strong>Search</strong>. Single words do not need quotes. Multi-word phrases must be enclosed in single quotes.</p>
@@ -136,7 +157,7 @@
   <div class="example-block">'climate change'</div>
   <div class="example-block">renewables</div>
 
-  <p>The search is <strong>case-sensitive by default</strong>. Toggle the case-sensitivity checkbox in the sidebar if you want case-insensitive matching. Case-insensitive searches are slower on large result sets.</p>
+  <p>The search is <strong>case-insensitive by default</strong>. Tick the <strong>Case sensitive</strong> checkbox in the filter sidebar if you need exact-case matching.</p>
 
   <h3 id="boolean">Boolean operators</h3>
   <p>Combine terms using boolean logic to build precise queries.</p>
@@ -162,69 +183,117 @@
   <div class="example-block">'first nations' &amp; ('land rights' | 'native title') &amp; !'Northern Territory'</div>
   <div class="example-block">'WorkChoices' | 'industrial relations' | 'Fair Work'</div>
 
-  <h3 id="related">Related terms</h3>
-  <p>After a search, a <strong>Related</strong> panel appears below the search bar. It suggests alternative phrasings, synonyms, and abbreviations for each term in your query — one group of suggestions per term.</p>
-  <p>Suggestions are generated in two stages. First, the most frequently co-occurring terms from your actual search results are extracted from the corpus. These are then passed to an AI model as context, so suggestions are grounded in the language actually used in Australian parliamentary debate rather than generic synonyms.</p>
-  <p>Click a suggestion chip to add it to your search. The chip turns green and the full expanded query is shown in small text below the search bar. Click it again to remove it. The boolean structure of your original expression is preserved — each alias is inserted inline alongside its source term using an OR group.</p>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <h2 id="add-terms">4. Add terms (related terms)</h2>
+  <p>After a search, the <strong>Search</strong> button turns green and a row of suggestion chips appears below the search bar. Each chip is an alternative phrasing, synonym, or abbreviation for one of the terms in your query.</p>
+  <p>Suggestions are generated in two stages: the most frequently co-occurring terms from your actual results are extracted from the corpus, then passed to an AI model as context — so suggestions are grounded in the language actually used in Australian parliamentary debate, not generic synonyms.</p>
+  <p>Click a chip to add it to your search. The chip turns green and the expanded query is shown in small text below the search bar. Click it again to remove it. The boolean structure of your original expression is preserved — each alias is inserted inline alongside its source term using an OR group.</p>
 
   <div class="callout">
     <strong>Example:</strong> If your expression is <code>('climate change' | 'global warming') &amp; 'fuel subsidies'</code> and you click <em>climate emergency</em> as an alias for <em>climate change</em>, the effective query becomes <code>('climate change' | 'climate emergency' | 'global warming') &amp; 'fuel subsidies'</code>.
   </div>
 
-  <p>Related terms update automatically as you type — approximately 700ms after you pause. Only new or changed terms trigger a new fetch; unchanged terms keep their existing suggestions.</p>
+  <p>Suggestions update automatically as you type — approximately 700ms after you pause. Only new or changed terms trigger a new fetch; unchanged terms keep their existing suggestions.</p>
 
-  <h3 id="filters">Filters</h3>
-  <p>The sidebar contains metadata filters that narrow results without changing your search expression.</p>
 
-  <h4>Chamber</h4>
-  <p>Filter to <span class="badge-senate">Senate</span>, <span class="badge-house">House</span>, or both. Defaults to both chambers.</p>
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <h2 id="result-cards">5. Reading results — cards</h2>
+  <p>Each result card shows:</p>
+  <ul>
+    <li>Chamber badge (<span class="badge-senate">Senate</span> or <span class="badge-house">House</span>), speaker name, and date</li>
+    <li>Party, state or electorate, and government/opposition status</li>
+    <li>Type badges where applicable: <strong>Question</strong>, <strong>Written question</strong>, <strong>Answer</strong>, <strong>First speech</strong>, <strong>Interjection</strong></li>
+    <li>A 280-character preview of the speech body with matched terms highlighted</li>
+  </ul>
+  <p>Sort pills above the list let you reorder results by <strong>date</strong>, <strong>speaker</strong>, <strong>party</strong>, or <strong>chamber</strong>. Click the same pill twice to reverse the sort direction.</p>
+  <p>Click any card to open the reading pane on the right (or full-screen on mobile).</p>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <h2 id="reading-pane">6. The reading pane &amp; day context</h2>
+  <p>Clicking a card opens the reading pane, which shows <strong>every speech turn for that sitting day</strong> — not just the matched speech. This gives you the full debate context around the result you clicked.</p>
+  <ul>
+    <li>The selected turn is highlighted with a blue border.</li>
+    <li>Matched search terms are highlighted throughout all turns on the page.</li>
+    <li>A sticky header shows the chamber and matched terms on the left, and the sitting date as a ↗ link to the official APH Hansard on the right.</li>
+    <li>Use the <strong>Previous</strong> and <strong>Next</strong> buttons to step through the turns in sequence.</li>
+  </ul>
+  <p>On mobile, the reading pane opens full-screen. Tap <strong>← Back</strong> to return to the results list.</p>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <h2 id="chart">7. The timeseries chart</h2>
+  <p>A bar chart above the results shows matching speeches per year, coloured by chamber (Senate in blue, House in orange). It updates with every search and filter change.</p>
+
+  <h4>Passive highlight</h4>
+  <p>When you click a result card, the chart quietly marks that year's bar with an accent colour. This is informational only — it does not filter results or lock the year.</p>
+
+  <h4>Active pin</h4>
+  <p>Clicking a bar in the chart <strong>locks</strong> the view to that year. While pinned:</p>
+  <ul>
+    <li>Other years' bars are dimmed; the pinned bar stays full opacity.</li>
+    <li>Sidebar filters are paused and a lock banner appears in the sidebar.</li>
+    <li>The result list shows only speeches from the pinned year.</li>
+  </ul>
+  <p>To release the pin, click the same bar again, or use the <strong>Unpin year &amp; unlock filters</strong> button in the sidebar banner.</p>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <h2 id="filters">8. Filters</h2>
+  <p>Open the filter sidebar with the <strong>FILTERS</strong> tab on desktop, or the floating <strong>⊟</strong> button on mobile. Counts next to each option update in real time as you apply filters. The <strong>Reset</strong> button clears all filters at once.</p>
 
   <h4>Date range</h4>
-  <p>Restrict results to a specific date range. Dates are in YYYY-MM-DD format. Coverage runs from 1998-01-01 to mid-2025.</p>
+  <p>Restrict results to a specific period. Coverage runs from 1998-01-01 to the present. Click <strong>+ Add range</strong> to add multiple non-contiguous date windows.</p>
+
+  <h4>Parliament number</h4>
+  <p>Filter to a specific parliament (e.g. 47th Parliament). Useful for studying a single term.</p>
 
   <h4>Party</h4>
-  <p>Filter to speeches by members of a specific party. Party membership is assigned as at the date of the speech, so members who changed parties mid-term are correctly attributed.</p>
-
-  <h4>Speaker, state/electorate</h4>
-  <p>Partial-match text filters. Speaker matches on the member's display name; state/electorate matches on their state (Senate) or electorate (House).</p>
-
-  <h4>Government / Opposition</h4>
-  <p>Filter to speeches made while the member's party was in government or in opposition. This is determined at the chamber level by the date of the speech.</p>
+  <p>Filter to speeches by members of a specific party. Independents have their own group. Party membership is assigned as at the date of the speech, so members who changed parties mid-term are correctly attributed.</p>
 
   <h4>Gender</h4>
   <p>Filter to speeches by female, male, or non-binary members.</p>
 
-  <h4>Speech type</h4>
-  <p>Filter by the nature of the speech turn:</p>
+  <h4>State / senators and Electorate / MPs</h4>
+  <p>Filter by state (Senate) or electorate (House). The electorate filter includes region-type quick-filters to narrow by metropolitan, regional, or rural electorates.</p>
+
+  <h4>Row type and speech flags</h4>
+  <p>Fine-grained filters for the nature of the speech turn:</p>
   <ul>
-    <li><strong>Question</strong> — a question put to the government (includes Question Time)</li>
-    <li><strong>Answer</strong> — a minister's response to a question</li>
-    <li><strong>First speech</strong> — a member's inaugural speech to the chamber</li>
+    <li><strong>First speech</strong> — inaugural speeches only</li>
+    <li><strong>Questions</strong> — questions put to the government</li>
+    <li><strong>Answers</strong> — ministerial responses</li>
+    <li><strong>Written questions</strong> — questions submitted in writing</li>
     <li><strong>No interjections</strong> — exclude turns that are purely interjections</li>
+    <li><strong>Embedded interjections</strong> — include turns that contain inline interjections from other members</li>
     <li><strong>Main chamber only</strong> — exclude Federation Chamber / Main Committee proceedings</li>
   </ul>
 
-  <h4>Results per page</h4>
-  <p>Choose 10, 20, 50, or 100 results per page. Larger pages are slower to render but reduce pagination.</p>
+  <h4>Case sensitive</h4>
+  <p>Tick this checkbox to make the search exact-case. Unticked (the default) means matching is case-insensitive.</p>
 
-  <h3 id="results">Reading results</h3>
-  <p>Each result card shows:</p>
-  <ul>
-    <li>Chamber badge, speaker name, and date</li>
-    <li>Party, state or electorate, government/opposition status, and speech type badges</li>
-    <li>A 280-character preview of the speech body</li>
-  </ul>
-  <p>Click <strong>▶ expand</strong> to read the full speech text. Matched search terms are highlighted in the expanded view. Click again to collapse.</p>
-  <p>Results can be sorted by date, speaker name, party, chamber, or government/opposition status using the pill buttons above the results list. Click the same pill twice to reverse the sort direction.</p>
 
-  <h3 id="download">Downloading results</h3>
-  <p>Click <strong>↓ CSV (10)</strong> to download the first 10 results of your current search as a comma-separated file. The download respects all active filters and sort order. Columns include: date, chamber, speaker name, party, state/electorate, government flag, speech type flags, full body text, name ID, unique ID, partyfacts ID, and matched terms.</p>
-  <p>The 10-result limit applies to the free version of this tool.</p>
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <h2 id="download">9. Downloading</h2>
+  <p>Click <strong>↓ CSV (10)</strong> to download the first 10 results of your current search as a comma-separated file. The download respects all active filters and the current sort order. Columns include: date, chamber, speaker name, party, state/electorate, government flag, speech type flags, full body text, name ID, unique ID, partyfacts ID, and matched terms.</p>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <h2 id="mobile">10. Mobile</h2>
+  <div class="callout">
+    <strong>On a phone or tablet:</strong>
+    <ul class="mb-0 mt-1">
+      <li>Tap the floating <strong>⊟</strong> button at bottom-left to open the filter drawer.</li>
+      <li>Tap any result card to open the reading pane full-screen.</li>
+      <li>Tap <strong>← Back</strong> to return to the results list.</li>
+    </ul>
+  </div>
 
 
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <hr class="section-rule" />
-  <h2 id="methodology">Methodology</h2>
+  <h2 id="methodology">11. Methodology</h2>
 
   <h3 id="source">Source data</h3>
   <p>The corpus is built from the official XML Hansard files published by the <a href="https://www.aph.gov.au/Parliamentary_Business/Hansard" target="_blank">Parliament of Australia</a>. These files are the authoritative record of proceedings in both chambers and are made available for download from the APH website.</p>
@@ -238,13 +307,13 @@
   <h3 id="coverage">Coverage and scale</h3>
 
   <div class="stat-row">
-    <div class="stat-box"><div class="stat-num">549,864</div><div class="stat-label">Senate speech turns</div></div>
-    <div class="stat-box"><div class="stat-num">623,906</div><div class="stat-label">House speech turns</div></div>
+    <div class="stat-box"><div class="stat-num">555,265</div><div class="stat-label">Senate speech turns</div></div>
+    <div class="stat-box"><div class="stat-num">630,173</div><div class="stat-label">House speech turns</div></div>
     <div class="stat-box"><div class="stat-num">1,482</div><div class="stat-label">Senate sitting days</div></div>
     <div class="stat-box"><div class="stat-num">1,722</div><div class="stat-label">House sitting days</div></div>
   </div>
 
-  <p>Coverage runs from the first sitting day of 1998 through to mid-2025. The corpus does not include committee Hansard, which is handled separately.</p>
+  <p>Coverage runs from the first sitting day of 1998 through to 2026. The corpus does not include committee Hansard, which is held in a separate dataset.</p>
 
   <h3 id="speech-turns">What is a speech turn?</h3>
   <p>Each row in the corpus represents a single continuous speech turn — an uninterrupted block of text attributed to one speaker. A speech turn ends when the next speaker begins, or when the presiding officer intervenes. A single member may contribute many turns in a single sitting day across different debates.</p>
@@ -287,7 +356,7 @@
     <li><strong>Residual duplicate turns (~24 Senate, ~25 House):</strong> A small number of speech turns appear twice in the source XML. These are genuine artifacts in the official files and cannot be removed without risk of incorrectly deduplicating legitimate repeated quotations.</li>
     <li><strong>Body text coverage:</strong> The word count of the corpus body text is approximately 0.3–0.7% below an independent reference corpus (Katz &amp; Alexander, Zenodo 2023) for Senate files, due to minor differences in how procedural text and interjection formatting is handled across schema versions.</li>
     <li><strong>Committee Hansard:</strong> Committee hearings, estimates hearings, and joint committee proceedings are not included in this corpus. They are held in a separate dataset and are not yet searchable through this interface.</li>
-    <li><strong>Currency:</strong> The corpus covers proceedings up to mid-2025. Sittings after that date are not yet included.</li>
+    <li><strong>Currency:</strong> The corpus is updated periodically. Very recent sittings may not yet be included.</li>
   </ul>
 
   <div class="callout" style="margin-top:2rem">
