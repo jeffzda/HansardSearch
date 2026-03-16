@@ -1549,6 +1549,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.body.classList.add('searched');
   _applyTheme(localStorage.getItem("hansard-theme") === "light");
   loadTrialBanner();
+  doSearch(1);
   // Main search box: Enter or Search button only — no auto-search on typing
   document.getElementById("expr-input").addEventListener("keydown", e => {
     if (e.key === "Enter") newSearch();
