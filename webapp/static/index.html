@@ -3126,11 +3126,11 @@ async function updateAliasesIncremental() {
   const newTerms = new Set(extractSearchTerms(expr));
   if (!newTerms.size) return;
 
-  // Remove groups for terms no longer in the expression
-  for (const term of _lastAliasTerms) {
-    if (!newTerms.has(term)) {
-      document.getElementById("alias-group-" + btoa(term))?.remove();
-      _selectedAliases.delete(term);
+  // Remove groups whose terms are no longer in the expression (use DOM as source of truth)
+  for (const g of [...groups.children]) {
+    if (!newTerms.has(g.dataset.term)) {
+      _selectedAliases.delete(g.dataset.term);
+      g.remove();
     }
   }
 
