@@ -2420,7 +2420,7 @@ function selectResult(matchId, date, chamber) {
   }
 
   // Highlight the matching bar in the timeseries chart
-  if (res) _highlightChartBar(res.date.slice(0, 4), res.chamber);
+  if (res && !_chartSelection) _applyChartHighlight(res.date.slice(0, 4), res.chamber);
 
   // Scroll reading pane to top immediately so header is visible
   document.getElementById('reading-pane').scrollTop = 0;
@@ -2992,6 +2992,7 @@ function resetAll() {
 // ── Reset filters ──────────────────────────────────────────────────────────────
 function resetFilters() {
   _resultNids = null; _resultParties = null; _resultParlNos = null;
+  if (_chartSelection) { _chartSelection = null; _clearChartHighlight(); }
   setDateRanges([{ from: _corpusDateMin, to: _corpusDateMax }]);
   document.querySelectorAll(".party-check, .group-check").forEach(c => {
     c.checked = false; c.indeterminate = false;
@@ -3318,6 +3319,8 @@ document.addEventListener("click", e => {
 // ── Chart ──────────────────────────────────────────────────────────────────────
 let _chart = null;
 let _CHART_YEARS = Array.from({ length: 29 }, (_, i) => String(1998 + i)); // updated in loadMetadata
+let _chartSelection = null;   // {year, chamber} or null — bar clicked by user
+let _cachedTimeseries = null; // last unfiltered timeseries, preserved while selection is active
 
 const _CHART_LABEL_COLOR = "#928374";          // --tn-comment, works in dark + light
 const _CHART_GRID_COLOR  = "rgba(146,131,116,0.18)";
@@ -3376,42 +3379,47 @@ function initChart() {
 }
 
 function renderChart(data) {
-  const ts = data.timeseries || {};
+  if (!_chart) return;
 
-  // Build lookup from the (possibly sparse) server response
+  // While a bar is selected, don't overwrite chart data with filtered results —
+  // just reapply the highlight and return.
+  if (_chartSelection) {
+    _applyChartHighlight(_chartSelection.year, _chartSelection.chamber);
+    return;
+  }
+
+  const ts = data.timeseries || {};
+  _cachedTimeseries = ts; // cache for use when selection becomes active
+
   const senMap = {}, houMap = {};
   (ts.years || []).forEach((y, i) => {
     senMap[y] = ts.senate[i] || 0;
     houMap[y] = ts.house[i]  || 0;
   });
 
-  // Always use full corpus range for x-axis regardless of date filter
   const axisYears = _CHART_YEARS;
-
   const senData = axisYears.map(y => senMap[y] || 0);
   const houData = axisYears.map(y => houMap[y] || 0);
-
-  const hasBoth = senData.some(v => v > 0) && houData.some(v => v > 0);
 
   _chart.data.labels = axisYears;
   _chart.data.datasets = [
     { label: "Senate", data: senData, backgroundColor: "rgba(158,61,31,0.75)",  borderColor: "rgba(158,61,31,1)",  borderWidth: 1 },
     { label: "House",  data: houData, backgroundColor: "rgba(78,107,74,0.75)",  borderColor: "rgba(78,107,74,1)",  borderWidth: 1 },
   ];
-  _chart.update();
+  _chart.update('none');
 }
 
-function _highlightChartBar(year, chamber) {
+function _applyChartHighlight(year, chamber) {
   if (!_chart) return;
   const labels = _chart.data.labels;
   const n = labels.length;
   const hi = labels.indexOf(String(year));
   _chart.data.datasets.forEach(ds => {
     const isSen = ds.label === 'Senate';
-    const baseColor    = isSen ? 'rgba(158,61,31,0.75)'  : 'rgba(78,107,74,0.75)';
-    const hlColor      = isSen ? 'rgba(220,100,60,1)'    : 'rgba(110,180,100,1)';
-    const baseBorder   = isSen ? 'rgba(158,61,31,1)'     : 'rgba(78,107,74,1)';
-    const hlBorder     = isSen ? 'rgba(255,160,120,1)'   : 'rgba(170,230,150,1)';
+    const baseColor  = isSen ? 'rgba(158,61,31,0.35)'  : 'rgba(78,107,74,0.35)';
+    const hlColor    = isSen ? 'rgba(220,100,60,1)'    : 'rgba(110,180,100,1)';
+    const baseBorder = isSen ? 'rgba(158,61,31,0.5)'   : 'rgba(78,107,74,0.5)';
+    const hlBorder   = isSen ? 'rgba(255,160,120,1)'   : 'rgba(170,230,150,1)';
     const isMatch = hi !== -1 && (chamber === 'senate') === isSen;
     ds.backgroundColor = Array.from({ length: n }, (_, i) =>
       (i === hi && isMatch) ? hlColor : baseColor
@@ -3424,12 +3432,44 @@ function _highlightChartBar(year, chamber) {
   _chart.update('none');
 }
 
+function _clearChartHighlight() {
+  if (!_chart) return;
+  _chart.data.datasets.forEach(ds => {
+    const isSen = ds.label === 'Senate';
+    const n = ds.data.length;
+    ds.backgroundColor = Array(n).fill(isSen ? 'rgba(158,61,31,0.75)' : 'rgba(78,107,74,0.75)');
+    ds.borderColor     = Array(n).fill(isSen ? 'rgba(158,61,31,1)'    : 'rgba(78,107,74,1)');
+    ds.borderWidth = 1;
+  });
+  _chart.update('none');
+}
+
 function _onChartBarClick(event, elements) {
   if (!elements.length || !_chart) return;
   const el = elements[0];
   const year = _chart.data.labels[el.index];
-  const chamberLabel = _chart.data.datasets[el.datasetIndex].label; // "Senate" or "House"
+  const chamberLabel = _chart.data.datasets[el.datasetIndex].label;
   const chamberVal   = chamberLabel === "Senate" ? "senate" : "house";
+
+  // Toggle: clicking the same bar clears the selection
+  if (_chartSelection && _chartSelection.year === year && _chartSelection.chamber === chamberVal) {
+    _chartSelection = null;
+    _clearChartHighlight();
+
+    // Clear date range
+    document.getElementById("date-ranges-container").innerHTML = "";
+
+    // Reset chamber to Both
+    const bothRadio = document.getElementById("ch-both");
+    if (bothRadio) { bothRadio.checked = true; bothRadio.dispatchEvent(new Event('change', {bubbles: true})); }
+
+    autoSearch(100);
+    return;
+  }
+
+  // New selection
+  _chartSelection = { year, chamber: chamberVal };
+  _applyChartHighlight(year, chamberVal);
 
   // Set chamber radio
   const radio = document.getElementById("ch-" + chamberVal);
