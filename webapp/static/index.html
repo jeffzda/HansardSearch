@@ -3849,7 +3849,7 @@ function _renderContextWindow(scroll = true) {
   if (canExpandAbove) {
     const btn = document.createElement("div");
     btn.className = "ctx-expand-btn";
-    btn.textContent = "↑ show earlier";
+    btn.textContent = "↑ previous";
     btn.onclick = () => {
       const prev = _prevSubstIdx(_ctxStartIdx);
       if (prev !== -1) _ctxStartIdx = prev;
@@ -3888,7 +3888,7 @@ function _renderContextWindow(scroll = true) {
   if (canExpandBelow) {
     const btn = document.createElement("div");
     btn.className = "ctx-expand-btn";
-    btn.textContent = "↓ show later";
+    btn.textContent = "↓ next";
     btn.onclick = () => {
       const next = _nextSubstIdx(_ctxEndIdx);
       if (next !== -1) _ctxEndIdx = next;
