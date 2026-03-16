@@ -2569,8 +2569,10 @@ async function doSearch(page) {
     renderResults(data);
     updateCombinedExpr();
     if (mainExpr) {
+      _setSearchBtnMode("related");
       updateAliasesIncremental();
     } else {
+      _setSearchBtnMode("search");
       _selectedAliases.clear();
       _lastAliasTerms = new Set();
       updateCombinedExpr();
