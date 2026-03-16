@@ -4128,9 +4128,11 @@ async function showContext(matchId, date, chamber) {
   _ctxTargetIdx = _ctxSpeeches.findIndex(sp => sp.match_id === matchId);
   if (_ctxTargetIdx === -1) _ctxTargetIdx = 0;
 
-  // Initial window: just the selected speech turn
-  _ctxStartIdx = _ctxTargetIdx;
-  _ctxEndIdx   = _ctxTargetIdx;
+  // Initial window: selected turn + one substantive turn above and below
+  const _initPrev = _prevSubstIdx(_ctxTargetIdx);
+  const _initNext = _nextSubstIdx(_ctxTargetIdx);
+  _ctxStartIdx = _initPrev !== -1 ? _initPrev : _ctxTargetIdx;
+  _ctxEndIdx   = _initNext !== -1 ? _initNext : _ctxTargetIdx;
 
   _renderContextWindow();
 }
