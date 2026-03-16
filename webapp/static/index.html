@@ -2512,6 +2512,7 @@ function closeMobileReadingPane() {
       pane.style.transition = '';
       pane.style.transform = '';
       pane.classList.remove('mobile-open');
+      document.body.style.overflow = '';
     }, { once: true });
   }
 
