@@ -726,7 +726,6 @@ def _extract_seeds(matched_df: pd.DataFrame, n: int = 20) -> list:
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @app.route("/")
-@login_required
 def index():
     return send_from_directory("static", "index.html")
 
@@ -789,7 +788,6 @@ def api_login():
 
 
 @app.route("/api/me")
-@login_required
 def api_me():
     user = _get_user(session["user_id"])
     return jsonify({
@@ -807,7 +805,6 @@ def api_logout():
 
 
 @app.route("/api/metadata")
-@login_required
 def metadata():
     """Return unique filter values and row counts."""
     parties = set()
@@ -948,7 +945,6 @@ def _compute_facet_counts(df: pd.DataFrame) -> dict:
 
 
 @app.route("/api/search", methods=["POST"])
-@login_required
 def search():
     """Execute a search and return paginated results with context."""
     _t0 = time.perf_counter()
@@ -1229,7 +1225,6 @@ def search():
 
 
 @app.route("/api/day_context", methods=["POST"])
-@login_required
 def day_context():
     try:
         body = request.get_json(force=True, silent=True) or {}
@@ -1277,7 +1272,6 @@ _alias_cache: dict = {}  # cache_key -> list[str]
 
 
 @app.route("/api/suggest_aliases", methods=["POST"])
-@login_required
 def suggest_aliases():
     """Use Claude to suggest alternative search terms, seeded by corpus co-occurrence."""
     import anthropic
@@ -1370,7 +1364,6 @@ def suggest_aliases():
 
 
 @app.route("/api/download", methods=["POST"])
-@login_required
 def download():
     """Return CSV of all matches (no pagination)."""
     try:
