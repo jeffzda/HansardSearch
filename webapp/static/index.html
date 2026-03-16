@@ -2464,8 +2464,8 @@ function selectResult(matchId, date, chamber) {
           ${termBadgesHtml}
         </div>
         <a href="${_hansardUrl(res.date, res.chamber)}" target="_blank" rel="noopener"
-           class="result-date" style="text-decoration:none;opacity:0.85">
-          ${esc(formatDate(res.date))}
+           class="result-date" style="text-decoration:none;color:var(--tn-blue)">
+          ${esc(formatDate(res.date))} ↗
         </a>
       </div>
       ${res.debate_heading ? `<div class="small text-muted mt-1">${esc(res.debate_heading)}</div>` : ''}`;
