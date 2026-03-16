@@ -3218,7 +3218,7 @@ function clearSearch() {
   updateCombinedExpr();
   closeAliases();
   _setSearchBtnMode("search");
-  doSearch(1);
+  document.getElementById("expr-input").focus();
 }
 
 // ── Reset all (title click) ────────────────────────────────────────────────────
