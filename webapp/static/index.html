@@ -1499,6 +1499,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Alias suggestions update after a pause — debounced to avoid flooding the Claude API
   let _aliasDebounce = null;
   document.getElementById("expr-input").addEventListener("input", () => {
+    _unfreezeChart();
     clearTimeout(_aliasDebounce);
     _aliasDebounce = setTimeout(() => updateAliasesIncremental(), 600);
   });
@@ -1528,7 +1529,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Radio groups: auto-trigger on change
   ["f-gender", "f-rowtype", "f-chamber"].forEach(name => {
     document.querySelectorAll(`input[name="${name}"]`).forEach(el => {
-      el.addEventListener("change", autoSearch);
+      el.addEventListener("change", () => { if (name === "f-chamber") _unfreezeChart(); autoSearch(); });
     });
   });
 
@@ -1776,7 +1777,7 @@ function _makeDateRangeRow(from, to) {
   row.querySelectorAll("input").forEach(inp => {
     if (_corpusDateMin) inp.min = _corpusDateMin;
     if (_corpusDateMax) inp.max = _corpusDateMax;
-    inp.addEventListener("change", () => { autoSearch(600); });
+    inp.addEventListener("change", () => { _unfreezeChart(); autoSearch(600); });
     inp.addEventListener("keydown", e => { if (e.key === "Enter") doSearch(1); });
   });
   return row;
@@ -3432,6 +3433,14 @@ function _applyChartHighlight(year, chamber) {
   _chart.update('none');
 }
 
+let _chartClickInProgress = false;
+
+function _unfreezeChart() {
+  if (!_chartSelection || _chartClickInProgress) return;
+  _chartSelection = null;
+  _clearChartHighlight();
+}
+
 function _clearChartHighlight() {
   if (!_chart) return;
   _chart.data.datasets.forEach(ds => {
@@ -3467,7 +3476,8 @@ function _onChartBarClick(event, elements) {
     return;
   }
 
-  // New selection
+  // New selection — suppress unfreeze during programmatic filter changes
+  _chartClickInProgress = true;
   _chartSelection = { year, chamber: chamberVal };
   _applyChartHighlight(year, chamberVal);
 
@@ -3484,6 +3494,7 @@ function _onChartBarClick(event, elements) {
   const dateBody = document.getElementById("fsb-date");
   if (dateBody && !dateBody.classList.contains("open")) toggleFilterBody("fsb-date");
 
+  _chartClickInProgress = false;
   autoSearch(100);
 }
 
