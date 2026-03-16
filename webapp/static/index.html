@@ -885,6 +885,12 @@
         <input class="form-check-input" type="checkbox" id="f-case-sensitive" />
         <label class="form-check-label small text-muted" for="f-case-sensitive">Case sensitive</label>
       </div>
+      <div style="width:1px;height:14px;background:var(--tn-bg-hi2);margin:0 2px;flex-shrink:0;"></div>
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" id="f-filters-active"
+               onchange="if(!this.checked) resetFilters();" />
+        <label class="form-check-label small text-muted" for="f-filters-active">Filters</label>
+      </div>
     </div>
     <!-- Related terms popup (fixed, outside search-controls row) -->
     <div id="alias-container" class="d-none p-2 border rounded">
@@ -2658,6 +2664,8 @@ function _updateFilterBadge() {
   const active = _hasActiveFilters();
   document.getElementById("sidebar-tab").classList.toggle("filter-badge-active", active);
   document.getElementById("mobile-filter-btn").classList.toggle("filter-badge-active", active);
+  const tog = document.getElementById("f-filters-active");
+  if (tog) tog.checked = active;
 }
 
 // ── Search ─────────────────────────────────────────────────────────────────────
