@@ -740,7 +740,7 @@
                 placeholder="Search…" autocomplete="off" />
               <div class="search-inner-btns">
                 <button id="clear-btn" onclick="clearSearch()" title="Clear search">✕</button>
-                <button id="search-btn" onclick="doSearch(1)">Search</button>
+                <button id="search-btn" onclick="newSearch()">Search</button>
               </div>
             </div>
           </div>
@@ -1510,7 +1510,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   loadTrialBanner();
   // Main search box: Enter or Search button only — no auto-search on typing
   document.getElementById("expr-input").addEventListener("keydown", e => {
-    if (e.key === "Enter") doSearch(1);
+    if (e.key === "Enter") newSearch();
   });
   // Alias suggestions update after a pause — debounced to avoid flooding the Claude API
   let _aliasDebounce = null;
@@ -3006,7 +3006,7 @@ function resetAll() {
 }
 
 // ── Reset filters ──────────────────────────────────────────────────────────────
-function resetFilters() {
+function _resetFiltersOnly() {
   _resultNids = null; _resultParties = null; _resultParlNos = null;
   if (_chartSelection) { _chartSelection = null; _clearChartHighlight(); _unlockFilters(); _cancelLockHint(); }
   setDateRanges([{ from: _corpusDateMin, to: _corpusDateMax }]);
@@ -3025,6 +3025,20 @@ function resetFilters() {
     .forEach(id => document.getElementById(id).checked = false);
   _applyPanelCrossFilter();
   clearFacetCounts();
+}
+
+function resetFilters() {
+  _resetFiltersOnly();
+  doSearch(1);
+}
+
+// Called when the user explicitly submits a new search (Enter or Search button).
+// Resets all filters + chamber + case-sensitive, then searches fresh.
+function newSearch() {
+  _resetFiltersOnly();
+  const bothEl = document.querySelector('input[name="f-chamber"][value="both"]');
+  if (bothEl) bothEl.checked = true;
+  document.getElementById("f-case-sensitive").checked = false;
   doSearch(1);
 }
 
