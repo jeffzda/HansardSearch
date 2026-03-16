@@ -985,25 +985,6 @@
                    cursor:pointer;font-size:0.72rem;font-weight:700;line-height:1;
                    width:18px;height:18px;padding:0;display:flex;align-items:center;justify-content:center;
                    opacity:0.7;">i</button>
-          <div id="filter-info-popup" class="d-none"
-            style="position:fixed;top:0;left:0;
-                   width:min(360px,calc(100vw - 16px));z-index:2000;
-                   background:var(--tn-bg-hi);border:1px solid var(--tn-bg-hi2);
-                   border-radius:6px;padding:12px 14px;font-size:0.82rem;
-                   box-shadow:0 4px 16px rgba(0,0,0,0.35);">
-            <div style="font-weight:600;margin-bottom:6px;color:var(--tn-fg)">About filters</div>
-            <div style="color:var(--tn-fg-dim);line-height:1.6">
-              Narrow results by speaker, date, party, state/electorate, chamber, and speech type.
-              Filters apply on top of your search and update result counts in real time.<br><br>
-              <span style="color:var(--tn-comment);font-size:0.78rem">Example:</span><br>
-              <span onclick="runDemoExample()" style="cursor:pointer;border-bottom:1px dotted var(--tn-comment)">
-                To see what Labor MPs from Victoria said about housing affordability in the 47th Parliament —
-                search <em>housing affordability</em>, set Chamber → House, Party → ALP,
-                State → VIC, Parliament → 47th.
-              </span>
-              <span style="display:block;margin-top:6px;font-size:0.74rem;color:var(--tn-teal)">▶ Click to apply this example</span>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -4146,6 +4127,27 @@ async function showContext(matchId, date, chamber) {
 
 <div id="sidebar-backdrop" onclick="closeSidebar()"></div>
 <div id="filter-hint">Tip: refine your search using filters in the sidebar ←</div>
+
+<!-- Filter info popup — kept at body level so it isn't clipped by sidebar's CSS transform -->
+<div id="filter-info-popup" class="d-none"
+  style="position:fixed;top:0;left:0;
+         width:min(360px,calc(100vw - 16px));z-index:2000;
+         background:var(--tn-bg-hi);border:1px solid var(--tn-bg-hi2);
+         border-radius:6px;padding:12px 14px;font-size:0.82rem;
+         box-shadow:0 4px 16px rgba(0,0,0,0.35);">
+  <div style="font-weight:600;margin-bottom:6px;color:var(--tn-fg)">About filters</div>
+  <div style="color:var(--tn-fg-dim);line-height:1.6">
+    Narrow results by speaker, date, party, state/electorate, chamber, and speech type.
+    Filters apply on top of your search and update result counts in real time.<br><br>
+    <span style="color:var(--tn-comment);font-size:0.78rem">Example:</span><br>
+    <span onclick="runDemoExample()" style="cursor:pointer;border-bottom:1px dotted var(--tn-comment)">
+      To see what Labor MPs from Victoria said about housing affordability in the 47th Parliament —
+      search <em>housing affordability</em>, set Chamber → House, Party → ALP,
+      State → VIC, Parliament → 47th.
+    </span>
+    <span style="display:block;margin-top:6px;font-size:0.74rem;color:var(--tn-teal)">▶ Click to apply this example</span>
+  </div>
+</div>
 
 
 <div id="filter-sheet-overlay" onclick="closeMobileSidebar()"></div>
