@@ -3006,7 +3006,7 @@ function resetAll() {
 }
 
 // ── Reset filters ──────────────────────────────────────────────────────────────
-function _resetFiltersOnly() {
+function resetFilters() {
   _resultNids = null; _resultParties = null; _resultParlNos = null;
   if (_chartSelection) { _chartSelection = null; _clearChartHighlight(); _unlockFilters(); _cancelLockHint(); }
   setDateRanges([{ from: _corpusDateMin, to: _corpusDateMax }]);
@@ -3025,20 +3025,13 @@ function _resetFiltersOnly() {
     .forEach(id => document.getElementById(id).checked = false);
   _applyPanelCrossFilter();
   clearFacetCounts();
-}
-
-function resetFilters() {
-  _resetFiltersOnly();
   doSearch(1);
 }
 
 // Called when the user explicitly submits a new search (Enter or Search button).
-// Resets all filters + chamber + case-sensitive, then searches fresh.
+// Only clears the chart highlight lock — all other filters are preserved.
 function newSearch() {
-  _resetFiltersOnly();
-  const bothEl = document.querySelector('input[name="f-chamber"][value="both"]');
-  if (bothEl) bothEl.checked = true;
-  document.getElementById("f-case-sensitive").checked = false;
+  if (_chartSelection) _unfreezeChart();
   doSearch(1);
 }
 
