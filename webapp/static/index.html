@@ -3158,14 +3158,9 @@ async function updateAliasesIncremental() {
     } catch (e) { /* individual fetch failures are handled inside fetchAndRenderGroup */ }
   }
 
-  // Update count and button label after fetch completes
-  const count = groups.children.length;
-  _aliasBadgeCount = count;
-  if (count > 0) {
-    _setSearchBtnMode("related");
-  } else {
-    _setSearchBtnMode("search");
-  }
+  // Update count; only refresh the label if already in related mode (doSearch owns the transition)
+  _aliasBadgeCount = groups.children.length;
+  if (_searchBtnMode === "related") _setSearchBtnMode("related");
 }
 
 function _caseVariants(term) {
