@@ -2513,7 +2513,10 @@ async function doSearch(page) {
   const mainExpr   = inputEl.value.trim();
   const expression = buildFullExpression();
   _lastFullExpression = expression;
-  _lastRawExpression  = mainExpr;
+  // Reflect auto-quoting in the display: simple phrases are wrapped in quotes before searching
+  _lastRawExpression = (mainExpr && !/[&|!()]/.test(mainExpr))
+    ? `'${mainExpr.replace(/['"]/g, "")}'`
+    : mainExpr;
   hideError();
 
   // Keep browser URL bar in sync so users can copy/share directly from the address bar
