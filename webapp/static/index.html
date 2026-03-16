@@ -3841,7 +3841,7 @@ function _renderContextWindow(scroll = true) {
   const bodyEl = document.getElementById("reading-pane-body");
   bodyEl.innerHTML = "";
   const speeches = _ctxSpeeches;
-  const terms = extractSearchTerms(document.getElementById("expr-input").value.trim());
+  const terms = extractSearchTerms(_lastFullExpression || document.getElementById("expr-input").value.trim());
 
   const canExpandAbove = _prevSubstIdx(_ctxStartIdx) !== -1;
   const canExpandBelow = _nextSubstIdx(_ctxEndIdx)   !== -1;
