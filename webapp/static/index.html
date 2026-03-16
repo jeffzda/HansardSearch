@@ -547,8 +547,22 @@
       display: flex; align-items: flex-start; justify-content: center;
       padding-top: 14px; cursor: pointer;
       border-right: 1px solid var(--tn-bg-hi2);
+      position: relative;
     }
     #sidebar-tab:hover { background: var(--tn-bg-hi); }
+    .filter-active-dot {
+      display: none; width: 7px; height: 7px; border-radius: 50%;
+      background: var(--tn-orange); flex-shrink: 0;
+      position: absolute; top: 5px; left: 50%; transform: translateX(-50%);
+      pointer-events: none;
+    }
+    #mobile-filter-dot {
+      display: none; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--tn-orange); flex-shrink: 0; margin-left: 4px;
+      pointer-events: none; vertical-align: middle; margin-bottom: 1px;
+    }
+    .filter-badge-active .filter-active-dot,
+    .filter-badge-active #mobile-filter-dot { display: inline-block; }
     @keyframes sidebar-pulse {
       0%   { background: transparent; }
       15%  { background: var(--tn-bg-hi2); }
@@ -821,7 +835,7 @@
     </div>
   </div>
 
-  <button id="mobile-filter-btn" onclick="openMobileSidebar()" class="small ms-auto me-2" style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:5px;color:var(--tn-fg);cursor:pointer;padding:4px 10px;font-size:0.82rem;align-items:center;gap:5px;" title="Filters">⚙ Filters</button>
+  <button id="mobile-filter-btn" onclick="openMobileSidebar()" class="small ms-auto me-2" style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:5px;color:var(--tn-fg);cursor:pointer;padding:4px 10px;font-size:0.82rem;align-items:center;gap:5px;" title="Filters">⚙ Filters<span id="mobile-filter-dot"></span></button>
   <button id="theme-toggle" onclick="toggleTheme()" class="small me-3" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75" title="Toggle light/dark mode"></button>
   <a href="/help" class="small me-3" style="color:var(--tn-comment);text-decoration:none;opacity:0.75" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Help</a>
   <button onclick="doLogout()" class="small me-2" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Sign out</button>
@@ -879,7 +893,7 @@
 
     <!-- ② Sidebar filters — second in DOM (after chart on mobile, left col on desktop) -->
     <div id="sidebar">
-      <div id="sidebar-tab" onclick="toggleSidebar()" title="Toggle filters"><span>Filters</span></div>
+      <div id="sidebar-tab" onclick="toggleSidebar()" title="Toggle filters"><span class="filter-active-dot"></span><span>Filters</span></div>
       <div id="sidebar-inner">
       <div class="d-flex align-items-center justify-content-between mb-3">
         <h6 class="text-uppercase text-muted mb-0" style="font-size:0.75rem;letter-spacing:.05em">Filters</h6>
@@ -2449,8 +2463,30 @@ function selectResult(matchId, date, chamber) {
   showContext(matchId, date, chamber);
 }
 
+// ── Active-filter badge ────────────────────────────────────────────────────────
+function _hasActiveFilters() {
+  if (document.querySelector('input[name="f-chamber"]:checked')?.value !== "both") return true;
+  if (document.getElementById("f-case-sensitive").checked) return true;
+  const ranges = getDateRanges();
+  if (ranges.some(r => r.from !== _corpusDateMin || r.to !== _corpusDateMax)) return true;
+  if (document.querySelector(".party-check:checked, .parl-check:checked")) return true;
+  if (document.querySelector(".senator-check:checked, .mp-check:checked")) return true;
+  if (document.querySelector('input[name="f-gender"]:checked')?.value) return true;
+  if ((document.querySelector('input[name="f-rowtype"]:checked')?.value || "both") !== "both") return true;
+  const flagIds = ["f-first-speech","f-question","f-answer","f-no-interject",
+                   "f-main-chamber","f-fed-chamber","f-written","f-embedded-interject"];
+  if (flagIds.some(id => document.getElementById(id)?.checked)) return true;
+  return false;
+}
+function _updateFilterBadge() {
+  const active = _hasActiveFilters();
+  document.getElementById("sidebar-tab").classList.toggle("filter-badge-active", active);
+  document.getElementById("mobile-filter-btn").classList.toggle("filter-badge-active", active);
+}
+
 // ── Search ─────────────────────────────────────────────────────────────────────
 async function doSearch(page) {
+  _updateFilterBadge();
   const inputEl = document.getElementById("expr-input");
   const raw = inputEl.value.trim();
   if (raw && /[&|!()]/.test(raw) && !_exprLooksComplete(raw)) {
