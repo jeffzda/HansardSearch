@@ -15,6 +15,7 @@ import io
 import csv
 import json
 import time
+import hashlib
 import sqlite3
 import secrets as _secrets
 import concurrent.futures
@@ -28,6 +29,23 @@ from flask import Flask, request, jsonify, send_from_directory, Response, sessio
 from werkzeug.security import generate_password_hash, check_password_hash
 
 _THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+# ── Search result cache (empty-expression, no-filter requests only) ────────────
+_SEARCH_CACHE: dict = {}   # md5_key -> {"expires": float, "data": bytes}
+_CACHE_TTL = 300           # seconds (5 minutes)
+
+def _search_cache_key(chamber, page, page_size, sort_col, sort_dir, case_sensitive):
+    blob = json.dumps([chamber, page, page_size, sort_col, sort_dir, case_sensitive])
+    return hashlib.md5(blob.encode()).hexdigest()
+
+def _cache_get(key: str):
+    entry = _SEARCH_CACHE.get(key)
+    if entry and time.monotonic() < entry["expires"]:
+        return entry["data"]
+    return None
+
+def _cache_set(key: str, data: bytes):
+    _SEARCH_CACHE[key] = {"expires": time.monotonic() + _CACHE_TTL, "data": data}
 
 # ── Activity log ───────────────────────────────────────────────────────────────
 _LOG_PATH = Path(__file__).parent / "activity_log.jsonl"
@@ -961,6 +979,14 @@ def search():
     sort_dir = (body.get("sort_dir") or "asc").strip()
     ascending = sort_dir != "desc"
 
+    # ── Cache hit for empty-expression, no-filter requests ─────────────────────
+    _cacheable = not expression and not filters
+    _cache_key = _search_cache_key(chamber, page, page_size, sort_col, sort_dir, case_sensitive) if _cacheable else None
+    if _cache_key:
+        _cached = _cache_get(_cache_key)
+        if _cached is not None:
+            return Response(_cached, status=200, mimetype="application/json")
+
     tree = None
     if expression:
         expression = _normalise_expression(expression)
@@ -1199,7 +1225,7 @@ def search():
         flush=True,
     )
 
-    return jsonify({
+    _response_data = json.dumps({
         "total": total,
         "senate_count": senate_count,
         "house_count": house_count,
@@ -1217,7 +1243,12 @@ def search():
         "electorate_counts": electorate_counts,
         "facet_counts":      facet_counts,
         "results": results,
-    })
+    }, ensure_ascii=False).encode()
+
+    if _cache_key:
+        _cache_set(_cache_key, _response_data)
+
+    return Response(_response_data, status=200, mimetype="application/json")
 
     _log({"event": "search", "expression": expression, "chamber": chamber,
           "filters": filters, "total": total,
@@ -1309,7 +1340,7 @@ def suggest_aliases():
             max_tokens=512,
             temperature=0,
             system=(
-                "You are helping researchers search Australian Parliamentary Hansard debates (1998–2025). "
+                "You are helping researchers search Australian Parliamentary Hansard debates (1998–2026). "
                 "Given a search phrase, return alternative phrasings, abbreviations, acronyms, and synonyms "
                 "that might appear in parliamentary speech. Focus on terms actually used in Australian political "
                 "and parliamentary language. "
