@@ -868,9 +868,9 @@
         <h6 class="text-uppercase text-muted mb-0" style="font-size:0.75rem;letter-spacing:.05em">Filters</h6>
         <div style="display:flex;align-items:center;gap:6px;">
           <button onclick="resetFilters()" title="Reset all filters"
-            style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:4px;color:var(--tn-comment);
-                   cursor:pointer;font-size:0.7rem;padding:2px 7px;opacity:0.75;"
-            onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Reset</button>
+            style="background:var(--tn-bg-hi2);border:1px solid var(--tn-comment);border-radius:4px;
+                   color:var(--tn-fg);cursor:pointer;font-size:0.75rem;font-weight:600;padding:3px 10px;"
+            onmouseover="this.style.borderColor='var(--tn-fg)'" onmouseout="this.style.borderColor='var(--tn-comment)'">↺ Reset</button>
         <div style="position:relative;">
           <button id="filter-info-btn" onclick="toggleFilterInfo(event)"
             title="About these filters"
