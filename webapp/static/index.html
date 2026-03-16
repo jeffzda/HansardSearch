@@ -519,7 +519,7 @@
     #search-btn.related-mode { background: var(--tn-cyan); }
     #search-btn.related-mode:hover { background: var(--tn-cyan); filter: brightness(1.12); }
     #search-btn.related-mode.active { filter: brightness(0.88); }
-    #alias-badge { font-size: 0.72rem; margin-right: 2px; }
+
 
     #search-pin-group {
       display: none; flex: 1; min-width: 0; max-width: 560px;
@@ -756,7 +756,7 @@
                 placeholder="Search…" autocomplete="off" />
               <div class="search-inner-btns">
                 <button id="clear-btn" onclick="clearSearch()" title="Clear search">✕</button>
-                <button id="search-btn" onclick="searchBtnClick()"><span id="sbtn-search">Search</span><span id="sbtn-related" style="display:none">Related <span id="alias-badge"></span>▾</span></button>
+                <button id="search-btn" onclick="searchBtnClick()">Search</button>
               </div>
             </div>
           </div>
@@ -2462,12 +2462,15 @@ function selectResult(matchId, date, chamber) {
 
 // ── Search button mode (Search ↔ Related) ─────────────────────────────────────
 let _searchBtnMode = "search";
+let _aliasBadgeCount = 0;
 function _setSearchBtnMode(mode) {
   _searchBtnMode = mode;
   const btn = document.getElementById("search-btn");
+  if (!btn) return;
   btn.classList.toggle("related-mode", mode === "related");
-  document.getElementById("sbtn-search").style.display  = mode === "related" ? "none" : "";
-  document.getElementById("sbtn-related").style.display = mode === "related" ? "" : "none";
+  btn.textContent = mode === "related"
+    ? "Related" + (_aliasBadgeCount ? " " + _aliasBadgeCount : "") + " ▾"
+    : "Search";
   if (mode === "search") {
     document.getElementById("alias-container").classList.add("d-none");
     btn.classList.remove("active");
@@ -3149,26 +3152,18 @@ async function updateAliasesIncremental() {
   _lastAliasTerms = newTerms;
   updateCombinedExpr();
 
-  // Flip button immediately once placeholder groups exist — don't wait for Claude API
-  const badge = document.getElementById("alias-badge");
-  if (groups.children.length > 0) {
-    badge.textContent = groups.children.length + " ";
-    _setSearchBtnMode("related");
-  }
-
   if (termsToFetch.length) {
     try {
       await Promise.all(termsToFetch.map(term => fetchAndRenderGroup(term)));
     } catch (e) { /* individual fetch failures are handled inside fetchAndRenderGroup */ }
   }
 
-  // Re-check after fetch completes — update count, snap back if nothing remains
+  // Update count and button label after fetch completes
   const count = groups.children.length;
+  _aliasBadgeCount = count;
   if (count > 0) {
-    badge.textContent = count + " ";
     _setSearchBtnMode("related");
   } else {
-    badge.textContent = "";
     _setSearchBtnMode("search");
   }
 }
