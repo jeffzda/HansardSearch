@@ -132,9 +132,15 @@
       }
       #sidebar         { grid-area: sidebar; position: sticky; top: 0; width: 28px; }
       #results-list-col { grid-area: cards; grid-row: 1 / 3; }
+      @keyframes sidebar-slide-in  { from { transform: translateX(-292px); } to { transform: translateX(0); } }
+      @keyframes sidebar-slide-out { from { transform: translateX(0); } to { transform: translateX(-292px); } }
       #sidebar.sidebar-open {
         position: fixed; left: 0; top: 0; bottom: 0; width: 320px; z-index: 1040;
         box-shadow: 4px 0 16px rgba(0,0,0,0.4);
+        animation: sidebar-slide-in 0.18s ease-out;
+      }
+      #sidebar.sidebar-closing {
+        animation: sidebar-slide-out 0.18s ease-in;
       }
       body.searched #sidebar.sidebar-open { position: fixed !important; z-index: 1040 !important; }
       #main-top     { grid-area: main-top; }
@@ -555,7 +561,7 @@
     .filter-active-dot {
       display: none; width: 7px; height: 7px; border-radius: 50%;
       background: var(--tn-orange); flex-shrink: 0;
-      position: absolute; top: 5px; left: 50%; transform: translateX(-50%);
+      position: absolute; top: 68px; left: 50%; transform: translateX(-50%);
       pointer-events: none;
     }
     #mobile-filter-dot {
@@ -565,6 +571,13 @@
     }
     .filter-badge-active .filter-active-dot,
     .filter-badge-active #mobile-filter-dot { display: inline-block; }
+    @keyframes dot-pulse {
+      0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+      50%       { opacity: 0.25; transform: translateX(-50%) scale(0.5); }
+    }
+    .filter-badge-active .filter-active-dot {
+      animation: dot-pulse 3s ease-in-out infinite;
+    }
     @keyframes sidebar-pulse {
       0%   { background: transparent; }
       15%  { background: var(--tn-bg-hi2); }
@@ -815,7 +828,7 @@
     <!-- Related terms popup (fixed, outside search-controls row) -->
     <div id="alias-container" class="d-none p-2 border rounded">
       <div class="mb-2">
-        <span class="small fw-semibold text-muted">Related — click to add to search</span>
+        <span class="small fw-semibold text-muted">Add terms to search</span>
       </div>
       <div id="alias-groups"></div>
     </div>
@@ -824,7 +837,7 @@
          background:var(--tn-bg-hi);border:1px solid var(--tn-teal);border-radius:6px;
          padding:8px 12px;font-size:0.78rem;color:var(--tn-fg-dim);
          box-shadow:0 4px 12px rgba(0,0,0,0.35);max-width:220px;pointer-events:none;">
-      Tip: after searching the Search button turns green — click <span style="color:var(--tn-cyan);font-weight:600">Related ▾</span> to broaden with synonym terms
+      Tip: after searching the Search button turns green — click <span style="color:var(--tn-cyan);font-weight:600">Add terms ▾</span> to broaden with synonym terms
     </div>
     <div id="chart-lock-hint">
       Click the highlighted bar again to release the year filter
@@ -1120,9 +1133,9 @@
       <div id="cards-header">
         <div style="display:flex;align-items:baseline;gap:0">
           <div id="query-display" class="d-none"></div>
-          <span id="related-toggle" class="d-none" onclick="toggleRelatedTerms()" style="font-size:0.72rem;color:var(--tn-comment);cursor:pointer;margin-left:8px;user-select:none"> + Related</span>
+          <span id="related-toggle" class="d-none" onclick="toggleRelatedTerms()" style="font-size:0.72rem;color:var(--tn-comment);cursor:pointer;margin-left:8px;user-select:none"> − Added terms</span>
         </div>
-        <div id="query-terms-display" class="d-none" style="font-size:0.78rem;margin-bottom:4px;line-height:1.7"></div>
+        <div id="query-terms-display" class="d-none" style="font-size:0.78rem;margin-top:-6px;margin-bottom:10px;line-height:1.7"></div>
         <!-- Sort bar -->
         <div id="sort-bar" class="sort-bar mb-2">
           <span style="font-size:0.72rem" class="text-muted me-1">Sort:</span>
@@ -1173,6 +1186,7 @@ let _sortCol = null;           // active sort column key
 let _sortDir = "desc";         // "asc" | "desc"
 let _isLoading = false;        // true while a search request is in flight
 let _filterHintShown = false;  // true after first search hint has fired
+let _lastAutoOpenSnapshot = null; // filter snapshot at last sidebar auto-open
 let _selectedAliases = new Map(); // Map<originalTerm, Set<alias>>
 let _lastAliasTerms = new Set();  // terms currently showing recommendation groups
 let _lastFullExpression = '';     // full alias-expanded expression from last search
@@ -1185,13 +1199,26 @@ let _ctxStartIdx   = -1;         // current window start (inclusive)
 let _ctxEndIdx     = -1;         // current window end (inclusive)
 
 // ── Sidebar toggle ──────────────────────────────────────────────────────────────
+function _closeSidebarAnimated() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar.classList.contains('sidebar-open')) return;
+  document.getElementById('sidebar-backdrop').classList.remove('open');
+  sidebar.classList.add('sidebar-closing');
+  sidebar.addEventListener('animationend', () => {
+    sidebar.classList.remove('sidebar-open', 'sidebar-closing');
+  }, { once: true });
+}
 function toggleSidebar() {
-  const open = document.getElementById('sidebar').classList.toggle('sidebar-open');
-  document.getElementById('sidebar-backdrop').classList.toggle('open', open);
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar.classList.contains('sidebar-open')) {
+    _closeSidebarAnimated();
+  } else {
+    sidebar.classList.add('sidebar-open');
+    document.getElementById('sidebar-backdrop').classList.add('open');
+  }
 }
 function closeSidebar() {
-  document.getElementById('sidebar').classList.remove('sidebar-open');
-  document.getElementById('sidebar-backdrop').classList.remove('open');
+  _closeSidebarAnimated();
 }
 
 
@@ -2469,7 +2496,7 @@ function _setSearchBtnMode(mode) {
   if (!btn) return;
   btn.classList.toggle("related-mode", mode === "related");
   btn.textContent = mode === "related"
-    ? "Related" + (_aliasBadgeCount ? " " + _aliasBadgeCount : "") + " ▾"
+    ? "Add terms" + (_aliasBadgeCount ? " " + _aliasBadgeCount : "") + " ▾"
     : "Search";
   if (mode === "search") {
     document.getElementById("alias-container").classList.add("d-none");
@@ -2483,7 +2510,6 @@ function searchBtnClick() {
 
 // ── Active-filter badge ────────────────────────────────────────────────────────
 function _hasActiveFilters() {
-  if (document.querySelector('input[name="f-chamber"]:checked')?.value !== "both") return true;
   if (document.getElementById("f-case-sensitive").checked) return true;
   const ranges = getDateRanges();
   if (ranges.some(r => r.from !== _corpusDateMin || r.to !== _corpusDateMax)) return true;
@@ -2495,6 +2521,18 @@ function _hasActiveFilters() {
                    "f-main-chamber","f-fed-chamber","f-written","f-embedded-interject"];
   if (flagIds.some(id => document.getElementById(id)?.checked)) return true;
   return false;
+}
+function _getFilterSnapshot() {
+  const caseSen   = document.getElementById("f-case-sensitive").checked;
+  const ranges    = getDateRanges().map(r => `${r.from}-${r.to}`).join(',');
+  const parties   = [...document.querySelectorAll('.party-check:checked,.parl-check:checked')].map(c => c.value).sort().join(',');
+  const members   = [...document.querySelectorAll('.senator-check:checked,.mp-check:checked')].map(c => c.value).sort().join(',');
+  const gender    = document.querySelector('input[name="f-gender"]:checked')?.value || '';
+  const rowtype   = document.querySelector('input[name="f-rowtype"]:checked')?.value || 'both';
+  const flagIds   = ["f-first-speech","f-question","f-answer","f-no-interject",
+                     "f-main-chamber","f-fed-chamber","f-written","f-embedded-interject"];
+  const flags     = flagIds.filter(id => document.getElementById(id)?.checked).join(',');
+  return [caseSen, ranges, parties, members, gender, rowtype, flags].join('|');
 }
 function _updateFilterBadge() {
   const active = _hasActiveFilters();
@@ -2635,17 +2673,17 @@ function renderResults(data) {
     if (!aliases.size) continue;
     const sep = `<span style="color:var(--tn-fg-dim)"> | </span>`;
     const aliasSpans = [...aliases].map(a =>
-      `<span style="color:var(--tn-fg)">'${esc(a)}'</span>`
+      `<span style="color:var(--tn-teal);opacity:0.78">'${esc(a)}'</span>`
     ).join(sep);
     termLines.push(
-      `<span style="${_codeStyle}"><span style="color:var(--tn-green)">'${esc(term)}'</span>${sep}${aliasSpans}</span>`
+      `<span style="${_codeStyle}"><span style="color:var(--tn-comment)">'${esc(term)}'</span>${sep}${aliasSpans}</span>`
     );
   }
   if (termLines.length) {
     termsEl.innerHTML = termLines.join("<br>");
-    termsEl.classList.add("d-none");   // collapsed by default
+    termsEl.classList.remove("d-none"); // open by default
     toggleEl.classList.remove("d-none");
-    toggleEl.textContent = " + Related";
+    toggleEl.textContent = " − Added terms";
   } else {
     termsEl.classList.add("d-none");
     toggleEl.classList.add("d-none");
@@ -3068,6 +3106,7 @@ function resetAll() {
 
 // ── Reset filters ──────────────────────────────────────────────────────────────
 function resetFilters() {
+  _lastAutoOpenSnapshot = null;
   _resultNids = null; _resultParties = null; _resultParlNos = null;
   if (_chartSelection) { _chartSelection = null; _clearChartHighlight(); _unlockFilters(); _cancelLockHint(); }
   setDateRanges([{ from: _corpusDateMin, to: _corpusDateMax }]);
@@ -3093,6 +3132,13 @@ function resetFilters() {
 // Only clears the chart highlight lock — all other filters are preserved.
 function newSearch() {
   if (_chartSelection) _unfreezeChart();
+  if (_hasActiveFilters()) {
+    const snap = _getFilterSnapshot();
+    if (snap !== _lastAutoOpenSnapshot) {
+      document.getElementById('sidebar').classList.add('sidebar-open');
+      _lastAutoOpenSnapshot = snap;
+    }
+  }
   doSearch(1);
 }
 
@@ -3310,7 +3356,7 @@ function toggleRelatedTerms() {
   const termsEl = document.getElementById("query-terms-display");
   const toggleEl = document.getElementById("related-toggle");
   const hidden = termsEl.classList.toggle("d-none");
-  toggleEl.textContent = hidden ? " + Related" : " − Related";
+  toggleEl.textContent = hidden ? " + Added terms" : " − Added terms";
 }
 
 let _relatedHintShown = false;
