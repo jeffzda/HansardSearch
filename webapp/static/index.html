@@ -3152,6 +3152,8 @@ function runDemoExample() {
   _selectedAliases.clear();
   closeAliases();
   updateCombinedExpr();
+  document.getElementById("query-terms-display").classList.add("d-none");
+  document.getElementById("related-toggle").classList.add("d-none");
 
   // 1. Search query
   document.getElementById("expr-input").value = "housing affordability";
