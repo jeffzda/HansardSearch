@@ -516,8 +516,10 @@
     #landing-sub   { font-size: 0.9rem; opacity: 0.6; margin: 0; }
 
     #pin-chamber-row { display: none; }
-    #alias-toggle-btn.active { background: var(--tn-bg-hi2); }
-    #alias-badge { font-size: 0.72rem; color: var(--tn-blue); margin-right:2px; }
+    #search-btn.related-mode { background: var(--tn-cyan); }
+    #search-btn.related-mode:hover { background: var(--tn-cyan); filter: brightness(1.12); }
+    #search-btn.related-mode.active { filter: brightness(0.88); }
+    #alias-badge { font-size: 0.72rem; margin-right: 2px; }
 
     #search-pin-group {
       display: none; flex: 1; min-width: 0; max-width: 560px;
@@ -754,7 +756,7 @@
                 placeholder="Search…" autocomplete="off" />
               <div class="search-inner-btns">
                 <button id="clear-btn" onclick="clearSearch()" title="Clear search">✕</button>
-                <button id="search-btn" onclick="newSearch()">Search</button>
+                <button id="search-btn" onclick="searchBtnClick()"><span id="sbtn-search">Search</span><span id="sbtn-related" style="display:none">Related <span id="alias-badge"></span>▾</span></button>
               </div>
             </div>
           </div>
@@ -809,12 +811,6 @@
         <input class="form-check-input" type="checkbox" id="f-case-sensitive" />
         <label class="form-check-label small text-muted" for="f-case-sensitive">Case sensitive</label>
       </div>
-      <button id="alias-toggle-btn" class="d-none btn btn-sm btn-outline-secondary"
-        style="font-size:0.78rem;white-space:nowrap"
-        onclick="toggleAliases()"
-        title="Show/hide related term suggestions">
-        Related <span id="alias-badge"></span>▾
-      </button>
     </div>
     <!-- Related terms popup (fixed, outside search-controls row) -->
     <div id="alias-container" class="d-none p-2 border rounded">
@@ -828,7 +824,7 @@
          background:var(--tn-bg-hi);border:1px solid var(--tn-teal);border-radius:6px;
          padding:8px 12px;font-size:0.78rem;color:var(--tn-fg-dim);
          box-shadow:0 4px 12px rgba(0,0,0,0.35);max-width:220px;pointer-events:none;">
-      Tip: after searching, click <span style="color:var(--tn-teal);font-weight:600">Related ▾</span> next to the search bar to broaden with synonym terms
+      Tip: after searching the Search button turns green — click <span style="color:var(--tn-cyan);font-weight:600">Related ▾</span> to broaden with synonym terms
     </div>
     <div id="chart-lock-hint">
       Click the highlighted bar again to release the year filter
@@ -1529,6 +1525,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Alias suggestions update after a pause — debounced to avoid flooding the Claude API
   let _aliasDebounce = null;
   document.getElementById("expr-input").addEventListener("input", () => {
+    if (_searchBtnMode === "related") _setSearchBtnMode("search");
     clearTimeout(_aliasDebounce);
     _aliasDebounce = setTimeout(() => updateAliasesIncremental(), 600);
   });
@@ -2463,6 +2460,24 @@ function selectResult(matchId, date, chamber) {
   showContext(matchId, date, chamber);
 }
 
+// ── Search button mode (Search ↔ Related) ─────────────────────────────────────
+let _searchBtnMode = "search";
+function _setSearchBtnMode(mode) {
+  _searchBtnMode = mode;
+  const btn = document.getElementById("search-btn");
+  btn.classList.toggle("related-mode", mode === "related");
+  document.getElementById("sbtn-search").style.display  = mode === "related" ? "none" : "";
+  document.getElementById("sbtn-related").style.display = mode === "related" ? "" : "none";
+  if (mode === "search") {
+    document.getElementById("alias-container").classList.add("d-none");
+    btn.classList.remove("active");
+  }
+}
+function searchBtnClick() {
+  if (_searchBtnMode === "related") toggleAliases();
+  else newSearch();
+}
+
 // ── Active-filter badge ────────────────────────────────────────────────────────
 function _hasActiveFilters() {
   if (document.querySelector('input[name="f-chamber"]:checked')?.value !== "both") return true;
@@ -3011,6 +3026,7 @@ function clearSearch() {
   _selectedAliases.clear();
   updateCombinedExpr();
   closeAliases();
+  _setSearchBtnMode("search");
   doSearch(1);
 }
 
@@ -3022,6 +3038,7 @@ function resetAll() {
   _selectedAliases.clear();
   updateCombinedExpr();
   closeAliases();
+  _setSearchBtnMode("search");
   // Reset chamber to both
   const bothEl = document.querySelector('input[name="f-chamber"][value="both"]');
   if (bothEl) bothEl.checked = true;
@@ -3134,18 +3151,15 @@ async function updateAliasesIncremental() {
     await Promise.all(termsToFetch.map(term => fetchAndRenderGroup(term)));
   }
 
-  // Update badge; only close container if no groups remain
+  // Update badge; flip button mode based on whether aliases are available
   const count = groups.children.length;
-  const toggleBtn = document.getElementById("alias-toggle-btn");
   const badge = document.getElementById("alias-badge");
   if (count > 0) {
-    toggleBtn.classList.remove("d-none");
     badge.textContent = count + " ";
+    _setSearchBtnMode("related");
   } else {
-    toggleBtn.classList.add("d-none");
     badge.textContent = "";
-    container.classList.add("d-none");
-    toggleBtn.classList.remove("active");
+    _setSearchBtnMode("search");
   }
 }
 
@@ -3266,23 +3280,20 @@ function renderAliasGroup(term, aliases, groupEl) {
 }
 
 function closeAliases() {
-  const container = document.getElementById("alias-container");
-  container.classList.add("d-none");
-  const btn = document.getElementById("alias-toggle-btn");
-  if (btn) btn.classList.remove("active");
+  document.getElementById("alias-container").classList.add("d-none");
+  document.getElementById("search-btn").classList.remove("active");
 }
 
 function toggleAliases() {
   const container = document.getElementById("alias-container");
-  const btn = document.getElementById("alias-toggle-btn");
+  const btn = document.getElementById("search-btn");
   const willShow = container.classList.contains("d-none");
   if (willShow) {
     container.classList.remove("d-none");
     btn.classList.add("active");
-    // Position below the button
     const r = btn.getBoundingClientRect();
     const popupW = 300;
-    let left = r.left;
+    let left = r.right - popupW;
     left = Math.max(8, Math.min(left, window.innerWidth - popupW - 8));
     container.style.top  = (r.bottom + 6) + "px";
     container.style.left = left + "px";
@@ -3305,10 +3316,10 @@ function showRelatedHint() {
   _relatedHintShown = true;
   const hint = document.getElementById("related-hint");
   if (!hint) return;
-  const anchor = document.getElementById("expr-input");
-  const r = anchor ? anchor.getBoundingClientRect() : { bottom: 80, left: 200 };
+  const anchor = document.getElementById("search-btn");
+  const r = anchor ? anchor.getBoundingClientRect() : { bottom: 80, right: 400 };
   const hintW = 220;
-  let left = r.left;
+  let left = (anchor ? r.right : 400) - hintW;
   left = Math.max(8, Math.min(left, window.innerWidth - hintW - 8));
   hint.style.top  = (r.bottom + 10) + "px";
   hint.style.left = left + "px";
@@ -3343,8 +3354,8 @@ document.addEventListener("click", e => {
   const aliasContainer = document.getElementById("alias-container");
   if (aliasContainer && !aliasContainer.classList.contains("d-none") &&
       !aliasContainer.contains(e.target) &&
-      e.target.id !== "alias-toggle-btn" &&
-      !e.target.closest("#alias-toggle-btn")) {
+      e.target.id !== "search-btn" &&
+      !e.target.closest("#search-btn")) {
     closeAliases();
   }
 });
