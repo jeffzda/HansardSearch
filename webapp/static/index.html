@@ -366,7 +366,14 @@
     mark { background: var(--tn-yellow); color: var(--tn-bg-dark); padding: 0 1px; border-radius: 2px; }
 
     /* ── Alias container ──────────────────────────────────────────────────── */
-    #alias-container { background-color: var(--tn-bg-hi) !important; border-color: var(--tn-bg-hi2) !important; }
+    #alias-container {
+      position: fixed; z-index: 2000;
+      background-color: var(--tn-bg-hi) !important;
+      border-color: var(--tn-bg-hi2) !important;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+      max-width: 340px; min-width: 220px;
+      max-height: 60vh; overflow-y: auto;
+    }
     .alias-group { margin-bottom: 10px; }
     .alias-group:last-child { margin-bottom: 0; }
     .alias-group-label {
@@ -781,20 +788,19 @@
         Related <span id="alias-badge"></span>▾
       </button>
     </div>
+    <!-- Related terms popup (fixed, outside search-controls row) -->
+    <div id="alias-container" class="d-none p-2 border rounded">
+      <div class="mb-2">
+        <span class="small fw-semibold text-muted">Related — click to add to search</span>
+      </div>
+      <div id="alias-groups"></div>
+    </div>
     <!-- One-time hint tooltip for Related button -->
     <div id="related-hint" style="display:none;position:fixed;z-index:3000;
          background:var(--tn-bg-hi);border:1px solid var(--tn-teal);border-radius:6px;
          padding:8px 12px;font-size:0.78rem;color:var(--tn-fg-dim);
          box-shadow:0 4px 12px rgba(0,0,0,0.35);max-width:220px;pointer-events:none;">
       Tip: after searching, click <span style="color:var(--tn-teal);font-weight:600">Related ▾</span> next to the search bar to broaden with synonym terms
-    </div>
-    <!-- Row 4: alias suggestions popup -->
-    <div id="alias-container" class="d-none p-2 border rounded">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <span class="small fw-semibold text-muted">Related — click to add to expression</span>
-        <button class="btn-close btn-sm" style="font-size:0.6rem" onclick="closeAliases()"></button>
-      </div>
-      <div id="alias-groups"></div>
     </div>
   </div>
 
@@ -3198,19 +3204,30 @@ function renderAliasGroup(term, aliases, groupEl) {
 }
 
 function closeAliases() {
-  document.getElementById("alias-container").classList.add("d-none");
-  document.getElementById("alias-groups").innerHTML = "";
+  const container = document.getElementById("alias-container");
+  container.classList.add("d-none");
   const btn = document.getElementById("alias-toggle-btn");
-  if (btn) { btn.classList.add("d-none"); btn.classList.remove("active"); }
-  const badge = document.getElementById("alias-badge");
-  if (badge) badge.textContent = "";
+  if (btn) btn.classList.remove("active");
 }
 
 function toggleAliases() {
   const container = document.getElementById("alias-container");
   const btn = document.getElementById("alias-toggle-btn");
-  const hidden = container.classList.toggle("d-none");
-  btn.classList.toggle("active", !hidden);
+  const willShow = container.classList.contains("d-none");
+  if (willShow) {
+    container.classList.remove("d-none");
+    btn.classList.add("active");
+    // Position below the button
+    const r = btn.getBoundingClientRect();
+    const popupW = 300;
+    let left = r.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - popupW - 8));
+    container.style.top  = (r.bottom + 6) + "px";
+    container.style.left = left + "px";
+    container.style.width = popupW + "px";
+  } else {
+    closeAliases();
+  }
 }
 
 function toggleRelatedTerms() {
@@ -3260,6 +3277,13 @@ document.addEventListener("click", e => {
       !popup.contains(e.target) &&
       e.target.id !== "filter-info-btn") {
     popup.classList.add("d-none");
+  }
+  const aliasContainer = document.getElementById("alias-container");
+  if (aliasContainer && !aliasContainer.classList.contains("d-none") &&
+      !aliasContainer.contains(e.target) &&
+      e.target.id !== "alias-toggle-btn" &&
+      !e.target.closest("#alias-toggle-btn")) {
+    closeAliases();
   }
 });
 
