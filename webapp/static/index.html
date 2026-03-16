@@ -313,9 +313,10 @@
     /* ── Pagination ───────────────────────────────────────────────────────── */
     .pagination { flex-wrap: wrap; }
     .page-link   { color: var(--tn-blue); background-color: var(--tn-bg); border-color: var(--tn-bg-hi2); }
-    .page-link:hover { background-color: var(--tn-bg-hi); color: var(--tn-blue); }
+    .page-link:hover { background-color: var(--tn-bg-hi); color: var(--tn-blue); border-color: var(--tn-bg-hi2); }
+    .page-link:focus { box-shadow: none; border-color: var(--tn-bg-hi2); }
     .page-item.active .page-link  { background-color: var(--tn-blue); border-color: var(--tn-blue); color: var(--tn-bg-dark); }
-    .page-item.disabled .page-link { color: var(--tn-comment); background-color: var(--tn-bg); }
+    .page-item.disabled .page-link { color: var(--tn-comment); background-color: var(--tn-bg); border-color: var(--tn-bg-hi2); }
 
     /* ── Alert ────────────────────────────────────────────────────────────── */
     .alert-danger { background-color: #2d1f24; border-color: var(--tn-red); color: var(--tn-red); }
