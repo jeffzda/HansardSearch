@@ -2505,21 +2505,35 @@ function closeMobileReadingPane() {
 }
 
 // Swipe-right to close reading pane on mobile
+// Uses a non-passive touchmove to call preventDefault() and block Chrome's
+// own back-navigation gesture when we've claimed the swipe.
 (function () {
   const pane = document.getElementById('main-results');
   let touchStartX = 0;
   let touchStartY = 0;
+  let claiming = false; // true once we've decided this is our swipe
 
   pane.addEventListener('touchstart', e => {
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
+    claiming = false;
   }, { passive: true });
 
-  pane.addEventListener('touchend', e => {
+  pane.addEventListener('touchmove', e => {
     if (!pane.classList.contains('mobile-open')) return;
+    const dx = e.touches[0].clientX - touchStartX;
+    const dy = e.touches[0].clientY - touchStartY;
+    if (!claiming && Math.abs(dx) > Math.abs(dy) && dx > 10) {
+      claiming = true; // horizontal rightward — claim it
+    }
+    if (claiming) e.preventDefault(); // blocks Chrome's back gesture
+  }, { passive: false });
+
+  pane.addEventListener('touchend', e => {
+    if (!pane.classList.contains('mobile-open') || !claiming) return;
+    claiming = false;
     const dx = e.changedTouches[0].clientX - touchStartX;
     const dy = e.changedTouches[0].clientY - touchStartY;
-    // Require rightward swipe > 60px and more horizontal than vertical
     if (dx > 60 && Math.abs(dx) > Math.abs(dy)) {
       closeMobileReadingPane();
     }
