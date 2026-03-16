@@ -151,6 +151,7 @@
     @media (max-width: 519px) {
       #header-bar { padding: 8px 12px; gap: 8px; }
       #header-version, #corpus-range-label, #header-stats { display: none !important; }
+      #header-controls { display: none !important; }
     }
 
     /* Mobile: sidebar becomes a fixed left drawer over the content */
@@ -186,16 +187,53 @@
       }
       #filter-sheet-overlay.open { display: block; }
 
-      /* Mobile filter button in header */
-      #mobile-filter-btn { display: inline-flex !important; }
+      /* Mobile FAB */
+      #mobile-filter-btn { display: flex !important; }
 
 /* Hide the desktop "Filters" heading and reset button — drawer has its own footer */
       #sidebar > h6, #sidebar > .d-grid { display: none !important; }
     }
 
-    /* Mobile filter button + drawer footer — hidden on desktop */
-    #mobile-filter-btn { display: none; }
+    @keyframes fab-nudge {
+      0%          { transform: scale(1);    box-shadow: 0 4px 18px rgba(0,0,0,0.45); }
+      15%         { transform: scale(1.18); box-shadow: 0 6px 24px rgba(131,165,152,0.5); }
+      30%         { transform: scale(0.95); }
+      45%         { transform: scale(1.12); box-shadow: 0 6px 24px rgba(131,165,152,0.4); }
+      60%         { transform: scale(1); }
+      75%         { transform: scale(1.06); }
+      100%        { transform: scale(1);    box-shadow: 0 4px 18px rgba(0,0,0,0.45); }
+    }
+
+    /* Mobile FAB — hidden on desktop */
+    #mobile-filter-btn {
+      display: none;
+      position: fixed; bottom: 28px; left: 22px; z-index: 500;
+      width: 52px; height: 52px; border-radius: 50%;
+      background: var(--tn-bg-hi);
+      border: 1px solid var(--tn-bg-hi2);
+      color: var(--tn-fg);
+      cursor: pointer;
+      align-items: center; justify-content: center;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+      padding: 0; position: fixed;
+      transition: border-color 0.2s;
+    }
+    #mobile-filter-btn.fab-nudge {
+      border-color: var(--tn-blue);
+      animation: fab-nudge 0.7s ease forwards;
+    }
+    #mobile-filter-btn.filter-badge-active {
+      border-color: var(--tn-blue);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.45), 0 0 0 2px rgba(131,165,152,0.35);
+    }
+    #mobile-filter-dot {
+      position: absolute; top: 10px; right: 10px;
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--tn-blue); display: none;
+    }
+    #mobile-filter-btn.filter-badge-active #mobile-filter-dot { display: block; }
     #sidebar-drawer-footer { display: none; }
+    #header-controls { display: flex; }
 
     /* Mobile reading pane — full-screen overlay */
     #mobile-back-btn { display: none; }
@@ -564,13 +602,7 @@
       position: absolute; top: 68px; left: 50%; transform: translateX(-50%);
       pointer-events: none;
     }
-    #mobile-filter-dot {
-      display: none; width: 6px; height: 6px; border-radius: 50%;
-      background: var(--tn-orange); flex-shrink: 0; margin-left: 4px;
-      pointer-events: none; vertical-align: middle; margin-bottom: 1px;
-    }
-    .filter-badge-active .filter-active-dot,
-    .filter-badge-active #mobile-filter-dot { display: inline-block; }
+    .filter-badge-active .filter-active-dot { display: inline-block; }
     @keyframes dot-pulse {
       0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
       50%       { opacity: 0.25; transform: translateX(-50%) scale(0.5); }
@@ -606,6 +638,15 @@
       border: 6px solid transparent; border-right-color: var(--tn-bg-hi2);
       border-left: none;
     }
+    #filter-hint.mobile {
+      left: 12px; top: auto; bottom: 98px;  /* above FAB (28 + 52 + 18) */
+    }
+    #filter-hint.mobile::before { display: none; }
+    #filter-hint.mobile::after {
+      content: ''; position: absolute; bottom: -6px; left: 22px;
+      border: 6px solid transparent; border-top-color: var(--tn-bg-hi2);
+      border-bottom: none;
+    }
     #filter-hint.show { display: block; animation: hint-in-out 4s ease forwards; }
     #sidebar-tab span {
       writing-mode: vertical-rl; transform: rotate(180deg);
@@ -619,16 +660,29 @@
     body.searched #sidebar-inner { max-height: 100%; }
     body.chart-locked #sidebar-inner,
     body.chart-locked #search-controls {
-      opacity: 0.38;
-      pointer-events: none;
-      user-select: none;
+      display: none !important;
     }
+    #chart-lock-sidebar-banner {
+      display: none;
+      padding: 12px 14px 10px;
+      border-bottom: 1px solid var(--tn-bg-hi2);
+      pointer-events: auto;
+    }
+    body.chart-locked #chart-lock-sidebar-banner { display: block; }
     #chart-lock-hint {
       position: fixed; z-index: 3000; display: none;
       background: var(--tn-bg-hi); border: 1px solid var(--tn-teal);
       border-radius: 6px; padding: 8px 12px; font-size: 0.78rem;
       color: var(--tn-fg-dim); box-shadow: 0 4px 12px rgba(0,0,0,0.35);
       max-width: 230px; pointer-events: none;
+    }
+    #chart-lock-hint::after {
+      content: ''; position: absolute; display: none;
+      border-left: 6px solid transparent; border-right: 6px solid transparent;
+    }
+    #chart-lock-hint.hint-arrow-down::after {
+      display: block; bottom: -6px; left: 22px;
+      border-top: 6px solid var(--tn-teal);
     }
     @media (max-width: 519px) {
       #sidebar-tab { display: none; }
@@ -735,8 +789,8 @@
 <body>
 <div id="progress-bar-track"><div id="progress-bar"></div></div>
 <div id="trial-banner"><div id="trial-banner-inner"></div></div>
-<div id="header-bar" class="py-2 px-4 mb-0 d-flex align-items-start gap-3">
-  <div style="display:flex;align-items:center;gap:inherit;flex-shrink:0;padding-top:10px">
+<div id="header-bar" class="py-2 px-4 mb-0 d-flex align-items-center gap-3">
+  <div style="display:flex;align-items:center;gap:inherit;flex-shrink:0;">
   <svg onclick="resetAll()" viewBox="177 0 331 360" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="width:1.095em;height:1.35em;flex-shrink:0;cursor:pointer;opacity:0.85;margin-right:-0.5em" title="Reset to default view">
     <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"  opacity="0.35" d="M 191 323 C 230 305 268 274 299 252 C 318 239 333 223 342 211"/>
     <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="13" opacity="0.65" d="M 189 322 C 228 304 265 272 297 251 C 316 238 331 221 341 210"/>
@@ -848,10 +902,10 @@
     </div>
   </div>
 
-  <button id="mobile-filter-btn" onclick="openMobileSidebar()" class="small ms-auto me-2" style="background:none;border:1px solid var(--tn-bg-hi2);border-radius:5px;color:var(--tn-fg);cursor:pointer;padding:4px 10px;font-size:0.82rem;align-items:center;gap:5px;" title="Filters">⚙ Filters<span id="mobile-filter-dot"></span></button>
-  <button id="theme-toggle" onclick="toggleTheme()" class="small me-3" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75" title="Toggle light/dark mode"></button>
-  <a href="/help" class="small me-3" style="color:var(--tn-comment);text-decoration:none;opacity:0.75" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Help</a>
-  <button onclick="doLogout()" class="small me-2" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Sign out</button>
+  <div id="header-controls" style="display:flex;align-items:center;gap:12px;margin-left:auto;flex-shrink:0;">
+    <button id="theme-toggle" onclick="toggleTheme()" class="small" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75" title="Toggle light/dark mode"></button>
+    <a href="/help" class="small" style="color:var(--tn-comment);text-decoration:none;opacity:0.75" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Help</a>
+  </div>
 </div>
 
 
@@ -907,6 +961,17 @@
     <!-- ② Sidebar filters — second in DOM (after chart on mobile, left col on desktop) -->
     <div id="sidebar">
       <div id="sidebar-tab" onclick="toggleSidebar()" title="Toggle filters"><span class="filter-active-dot"></span><span>Filters</span></div>
+      <div id="chart-lock-sidebar-banner">
+        <div style="font-size:0.8rem;color:var(--tn-fg-dim);line-height:1.4;margin-bottom:8px">
+          Filters are paused while <strong id="chart-lock-banner-year" style="color:var(--tn-fg)"></strong> is pinned in the chart.
+        </div>
+        <button onclick="_unfreezeChart();autoSearch(100);"
+                style="width:100%;padding:7px;border-radius:5px;font-size:0.82rem;cursor:pointer;
+                       background:var(--tn-bg-hi2);border:1px solid var(--tn-blue);
+                       color:var(--tn-fg);">
+          Unpin year &amp; unlock filters
+        </button>
+      </div>
       <div id="sidebar-inner">
       <div class="d-flex align-items-center justify-content-between mb-3">
         <h6 class="text-uppercase text-muted mb-0" style="font-size:0.75rem;letter-spacing:.05em">Filters</h6>
@@ -1549,7 +1614,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.body.classList.add('searched');
   _applyTheme(localStorage.getItem("hansard-theme") === "light");
   loadTrialBanner();
-  doSearch(1);
   // Main search box: Enter or Search button only — no auto-search on typing
   document.getElementById("expr-input").addEventListener("keydown", e => {
     if (e.key === "Enter") newSearch();
@@ -1620,9 +1684,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   initChart();
   // loadGeoData();  // MAPS (disabled) — re-enable when maps are restored
 
-  // ── Initial search if URL has params ───────────────────────────────────
-  const _hasUrlParams = new URLSearchParams(location.search).toString() !== '';
-  if (_hasUrlParams) doSearch(1);
+  // ── Initial search — must run after initChart() so _chart exists ──────────
+  doSearch(1);
 
 });
 
@@ -2122,8 +2185,9 @@ const PARTY_GROUPS = [
   { id: "labor",     label: "Labor",              parties: ["ALP"] },
   { id: "coalition", label: "Coalition",          parties: ["LP", "LNP", "NAT", "NATS", "NATS WA", "NatsWA", "CLP", "NP"] },
   { id: "greens",    label: "Greens",             parties: ["AG", "GWA"] },
-  { id: "centre",    label: "Centre & Democrats", parties: ["CA", "NXT", "AD", "LDP"] },
-  { id: "crossbench",label: "Crossbench & Minor", parties: ["IND", "PHON", "JLN", "KAP", "UAP", "PUP", "DHJP", "Hinch", "CDP", "DLP", "FFP", "AMEP", "AC", "APA", "AUS", "AV", "GLT", "PFP", "TG"] },
+  { id: "centre",       label: "Centre & Democrats", parties: ["CA", "NXT", "AD", "LDP"] },
+  { id: "independent",  label: "Independents",       parties: ["IND"] },
+  { id: "crossbench",   label: "Crossbench & Minor", parties: ["PHON", "JLN", "KAP", "UAP", "PUP", "DHJP", "Hinch", "CDP", "DLP", "FFP", "AMEP", "AC", "APA", "AUS", "AV", "GLT", "PFP", "TG"] },
 ];
 
 function renderPartyFilters(allParties) {
@@ -2440,6 +2504,28 @@ function closeMobileReadingPane() {
   document.getElementById('main-results').classList.remove('mobile-open');
 }
 
+// Swipe-right to close reading pane on mobile
+(function () {
+  const pane = document.getElementById('main-results');
+  let touchStartX = 0;
+  let touchStartY = 0;
+
+  pane.addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+
+  pane.addEventListener('touchend', e => {
+    if (!pane.classList.contains('mobile-open')) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    // Require rightward swipe > 60px and more horizontal than vertical
+    if (dx > 60 && Math.abs(dx) > Math.abs(dy)) {
+      closeMobileReadingPane();
+    }
+  }, { passive: true });
+}());
+
 // ── Result selection (email-pane) ───────────────────────────────────────────
 function selectResult(matchId, date, chamber) {
   if (_selectedMatchId) {
@@ -2474,8 +2560,8 @@ function selectResult(matchId, date, chamber) {
     headerEl.style.display = 'block';
   }
 
-  // Highlight the matching bar in the timeseries chart
-  if (res && !_chartSelection) _applyChartHighlight(res.date.slice(0, 4), res.chamber);
+  // Passively mark the card's year in the chart — no filter lock, full bar opacity
+  if (res && !_chartSelection) _applyCardHighlight(res.date.slice(0, 4), res.chamber);
 
   // Scroll reading pane to top immediately so header is visible
   document.getElementById('reading-pane').scrollTop = 0;
@@ -2631,6 +2717,23 @@ async function doSearch(page) {
     if (!_filterHintShown) {
       _filterHintShown = true;
       const hint = document.getElementById("filter-hint");
+      if (window.innerWidth <= 519) {
+        hint.textContent = 'Tap to refine your search with filters';
+        hint.classList.add("mobile");
+        // Nudge the FAB three times to draw the eye
+        const fab = document.getElementById("mobile-filter-btn");
+        if (fab) {
+          const _nudge = () => {
+            fab.classList.remove("fab-nudge");
+            void fab.offsetWidth; // reflow to restart animation
+            fab.classList.add("fab-nudge");
+          };
+          _nudge();
+          setTimeout(_nudge, 900);
+          setTimeout(_nudge, 1800);
+          setTimeout(() => fab.classList.remove("fab-nudge"), 2700);
+        }
+      }
       hint.classList.add("show");
       hint.addEventListener("animationend", () => hint.classList.remove("show"), { once: true });
     }
@@ -3554,6 +3657,8 @@ function _applyChartHighlight(year, chamber) {
 
 function _lockFilters() {
   document.body.classList.add('chart-locked');
+  const el = document.getElementById('chart-lock-banner-year');
+  if (el && _chartSelection) el.textContent = _chartSelection.year;
 }
 
 function _unlockFilters() {
@@ -3580,14 +3685,30 @@ function _showLockHint() {
   if (_lockHintShown) return;
   _lockHintShown = true;
   const hint = document.getElementById('chart-lock-hint');
-  const canvas = document.getElementById('timeseries-chart');
-  if (!hint || !canvas) return;
-  const r = canvas.getBoundingClientRect();
-  const hintW = 230;
-  let left = r.left + r.width / 2 - hintW / 2;
-  left = Math.max(8, Math.min(left, window.innerWidth - hintW - 8));
-  hint.style.left = left + 'px';
-  hint.style.top  = (r.top - 52) + 'px';
+  if (!hint) return;
+
+  if (window.innerWidth <= 519) {
+    // Mobile: point at the filter FAB (bottom: 28px, left: 22px, 52px tall)
+    hint.innerHTML = 'Tap <strong style="color:var(--tn-fg)">Filters</strong> to unlock';
+    hint.classList.add('hint-arrow-down');
+    hint.style.left   = '12px';
+    hint.style.top    = 'auto';
+    hint.style.bottom = (28 + 52 + 10) + 'px';  // above FAB
+  } else {
+    // Desktop: point above the chart
+    hint.textContent = 'Click the highlighted bar again to release the year filter';
+    hint.classList.remove('hint-arrow-down');
+    const canvas = document.getElementById('timeseries-chart');
+    if (!canvas) return;
+    const r = canvas.getBoundingClientRect();
+    const hintW = 230;
+    let left = r.left + r.width / 2 - hintW / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - hintW - 8));
+    hint.style.left   = left + 'px';
+    hint.style.top    = (r.top - 52) + 'px';
+    hint.style.bottom = 'auto';
+  }
+
   hint.style.display = 'block';
   setTimeout(_cancelLockHint, 5000);
 }
@@ -3598,6 +3719,10 @@ function _unfreezeChart() {
   _clearChartHighlight();
   _unlockFilters();
   _cancelLockHint();
+  // Clear the date range and chamber that the bar click imposed
+  document.getElementById("date-ranges-container").innerHTML = "";
+  const bothRadio = document.getElementById("ch-both");
+  if (bothRadio) { bothRadio.checked = true; bothRadio.dispatchEvent(new Event('change', {bubbles: true})); }
 }
 
 function _clearChartHighlight() {
@@ -3608,6 +3733,30 @@ function _clearChartHighlight() {
     ds.backgroundColor = Array(n).fill(isSen ? 'rgba(158,61,31,0.75)' : 'rgba(78,107,74,0.75)');
     ds.borderColor     = Array(n).fill(isSen ? 'rgba(158,61,31,1)'    : 'rgba(78,107,74,1)');
     ds.borderWidth = 1;
+  });
+  _chart.update('none');
+}
+
+// Passive highlight from card selection — all bars stay at full opacity,
+// matched bar gets a brighter accent. Visually "you are here", not "year locked".
+function _applyCardHighlight(year, chamber) {
+  if (!_chart) return;
+  const labels = _chart.data.labels;
+  const n = labels.length;
+  const hi = labels.indexOf(String(year));
+  _chart.data.datasets.forEach(ds => {
+    const isSen = ds.label === 'Senate';
+    const isMatch = hi !== -1 && (chamber === 'senate') === isSen;
+    const baseColor  = isSen ? 'rgba(158,61,31,0.75)' : 'rgba(78,107,74,0.75)';
+    const hlColor    = isSen ? 'rgba(220,100,60,1)'   : 'rgba(110,180,100,1)';
+    const baseBorder = isSen ? 'rgba(158,61,31,1)'    : 'rgba(78,107,74,1)';
+    const hlBorder   = isSen ? 'rgba(255,160,120,1)'  : 'rgba(170,230,150,1)';
+    ds.backgroundColor = Array.from({ length: n }, (_, i) =>
+      (i === hi && isMatch) ? hlColor : baseColor);
+    ds.borderColor = Array.from({ length: n }, (_, i) =>
+      (i === hi && isMatch) ? hlBorder : baseBorder);
+    ds.borderWidth = Array.from({ length: n }, (_, i) =>
+      (i === hi && isMatch) ? 2 : 1);
   });
   _chart.update('none');
 }
@@ -3947,5 +4096,18 @@ async function showContext(matchId, date, chamber) {
 
 <div id="filter-sheet-overlay" onclick="closeMobileSidebar()"></div>
 <div style="position:fixed;bottom:10px;right:14px;font-size:0.72rem;color:var(--tn-fg);opacity:0.5;pointer-events:none;z-index:50">&copy; Jeff Cumpston 2026</div>
+
+<!-- Mobile FAB: floating filter button -->
+<button id="mobile-filter-btn" onclick="openMobileSidebar()" title="Filters" aria-label="Open filters">
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="width:20px;height:20px;display:block">
+    <line x1="3" y1="5" x2="17" y2="5"/>
+    <circle cx="7" cy="5" r="2" fill="currentColor" stroke="none"/>
+    <line x1="3" y1="10" x2="17" y2="10"/>
+    <circle cx="13" cy="10" r="2" fill="currentColor" stroke="none"/>
+    <line x1="3" y1="15" x2="17" y2="15"/>
+    <circle cx="9" cy="15" r="2" fill="currentColor" stroke="none"/>
+  </svg>
+  <span id="mobile-filter-dot"></span>
+</button>
 </body>
 </html>
