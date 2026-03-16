@@ -3323,6 +3323,10 @@ const _CHART_GRID_COLOR  = "rgba(146,131,116,0.18)";
 const _CHART_OPTIONS = {
   responsive: true,
   maintainAspectRatio: false,
+  onClick: (event, elements) => _onChartBarClick(event, elements),
+  onHover: (event, elements) => {
+    event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+  },
   plugins: {
     legend: { display: false, position: "top", labels: { boxWidth: 12, color: _CHART_LABEL_COLOR, font: { size: 14 } } },
     title: { display: false },
@@ -3416,6 +3420,29 @@ function _highlightChartBar(year, chamber) {
     ds.borderWidth = 1;
   });
   _chart.update('none');
+}
+
+function _onChartBarClick(event, elements) {
+  if (!elements.length || !_chart) return;
+  const el = elements[0];
+  const year = _chart.data.labels[el.index];
+  const chamberLabel = _chart.data.datasets[el.datasetIndex].label; // "Senate" or "House"
+  const chamberVal   = chamberLabel === "Senate" ? "senate" : "house";
+
+  // Set chamber radio
+  const radio = document.getElementById("ch-" + chamberVal);
+  if (radio && !radio.checked) { radio.checked = true; radio.dispatchEvent(new Event('change', {bubbles: true})); }
+
+  // Set date range to that year
+  const c = document.getElementById("date-ranges-container");
+  c.innerHTML = "";
+  addDateRange(year + "-01-01", year + "-12-31");
+
+  // Open date section if collapsed
+  const dateBody = document.getElementById("fsb-date");
+  if (dateBody && !dateBody.classList.contains("open")) toggleFilterBody("fsb-date");
+
+  autoSearch(100);
 }
 
 /* ── MAPS (disabled) ─────────────────────────────────────────────────────────
