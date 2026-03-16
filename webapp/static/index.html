@@ -2501,35 +2501,63 @@ function updateCombinedExpr() {
 
 // ── Mobile reading pane overlay ─────────────────────────────────────────────
 function closeMobileReadingPane() {
-  document.getElementById('main-results').classList.remove('mobile-open');
+  const pane = document.getElementById('main-results');
+  pane.style.transition = '';
+  pane.style.transform = '';
+  pane.classList.remove('mobile-open');
 }
 
-// Swipe-right (anywhere) or swipe-left from right edge to close reading pane.
-// Non-passive touchmove lets us call preventDefault() to block Chrome's own
-// back-navigation gesture when we've claimed the swipe.
+// Swipe left or right anywhere on the reading pane to close it, with a
+// follow-finger animation that slides the pane off-screen on release.
+// Non-passive touchmove blocks Chrome's back/forward navigation gestures.
 (function () {
   const pane = document.getElementById('main-results');
   let touchStartX = 0;
   let touchStartY = 0;
   let claiming = false;
+  let swipeDir = 0; // +1 = right, -1 = left
+
+  function slideOff(dir) {
+    pane.style.transition = 'transform 0.22s ease';
+    pane.style.transform = `translateX(${dir * 110}vw)`;
+    pane.addEventListener('transitionend', () => {
+      pane.style.transition = '';
+      pane.style.transform = '';
+      pane.classList.remove('mobile-open');
+    }, { once: true });
+  }
+
+  function snapBack() {
+    pane.style.transition = 'transform 0.2s ease';
+    pane.style.transform = '';
+    pane.addEventListener('transitionend', () => {
+      pane.style.transition = '';
+    }, { once: true });
+  }
 
   pane.addEventListener('touchstart', e => {
+    if (!pane.classList.contains('mobile-open')) return;
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
     claiming = false;
+    swipeDir = 0;
+    pane.style.transition = ''; // cancel any in-progress snap
   }, { passive: true });
 
   pane.addEventListener('touchmove', e => {
     if (!pane.classList.contains('mobile-open')) return;
     const dx = e.touches[0].clientX - touchStartX;
     const dy = e.touches[0].clientY - touchStartY;
-    const fromRightEdge = touchStartX > window.innerWidth - 40;
-    const isRightSwipe = dx > 10;
-    const isLeftSwipeFromEdge = fromRightEdge && dx < -10;
-    if (!claiming && Math.abs(dx) > Math.abs(dy) && (isRightSwipe || isLeftSwipeFromEdge)) {
+    if (!claiming && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
       claiming = true;
+      swipeDir = dx > 0 ? 1 : -1;
     }
-    if (claiming) e.preventDefault();
+    if (claiming) {
+      e.preventDefault(); // blocks Chrome back/forward gestures
+      if (Math.sign(dx) === swipeDir) {
+        pane.style.transform = `translateX(${dx}px)`;
+      }
+    }
   }, { passive: false });
 
   pane.addEventListener('touchend', e => {
@@ -2537,11 +2565,10 @@ function closeMobileReadingPane() {
     claiming = false;
     const dx = e.changedTouches[0].clientX - touchStartX;
     const dy = e.changedTouches[0].clientY - touchStartY;
-    const fromRightEdge = touchStartX > window.innerWidth - 40;
-    const rightSwipe = dx > 60 && Math.abs(dx) > Math.abs(dy);
-    const leftSwipeFromEdge = fromRightEdge && dx < -60 && Math.abs(dx) > Math.abs(dy);
-    if (rightSwipe || leftSwipeFromEdge) {
-      closeMobileReadingPane();
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) && Math.sign(dx) === swipeDir) {
+      slideOff(swipeDir);
+    } else {
+      snapBack();
     }
   }, { passive: true });
 }());
