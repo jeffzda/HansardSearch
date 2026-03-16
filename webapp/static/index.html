@@ -3763,7 +3763,7 @@ function setLoading(on) {
     if (bar) bar.style.display = "block";
   } else {
     document.body.classList.remove("app-loading");
-    if (btn)    { btn.disabled = false; btn.textContent = "Search"; }
+    if (btn)    { btn.disabled = false; if (_searchBtnMode !== "related") btn.textContent = "Search"; }
     if (clearBtn) { clearBtn.disabled = false; }
     input.placeholder = input.dataset.placeholder || input.placeholder;
     if (bar) bar.style.display = "none";
