@@ -3147,6 +3147,12 @@ function runDemoExample() {
   // Close popup
   document.getElementById("filter-info-popup").classList.add("d-none");
 
+  // Clear any active aliases from a prior search
+  _lastAliasTerms = new Set();
+  _selectedAliases.clear();
+  closeAliases();
+  updateCombinedExpr();
+
   // 1. Search query
   document.getElementById("expr-input").value = "housing affordability";
 
