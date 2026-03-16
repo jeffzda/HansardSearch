@@ -588,6 +588,19 @@
       max-height: 100vh; padding: 12px 16px;
     }
     body.searched #sidebar-inner { max-height: 100%; }
+    body.chart-locked #sidebar-inner,
+    body.chart-locked #search-controls {
+      opacity: 0.38;
+      pointer-events: none;
+      user-select: none;
+    }
+    #chart-lock-hint {
+      position: fixed; z-index: 3000; display: none;
+      background: var(--tn-bg-hi); border: 1px solid var(--tn-teal);
+      border-radius: 6px; padding: 8px 12px; font-size: 0.78rem;
+      color: var(--tn-fg-dim); box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+      max-width: 230px; pointer-events: none;
+    }
     @media (max-width: 519px) {
       #sidebar-tab { display: none; }
       #sidebar-inner { overflow-y: auto; }
@@ -802,6 +815,9 @@
          padding:8px 12px;font-size:0.78rem;color:var(--tn-fg-dim);
          box-shadow:0 4px 12px rgba(0,0,0,0.35);max-width:220px;pointer-events:none;">
       Tip: after searching, click <span style="color:var(--tn-teal);font-weight:600">Related ▾</span> next to the search bar to broaden with synonym terms
+    </div>
+    <div id="chart-lock-hint">
+      Click the highlighted bar again to release the year filter
     </div>
   </div>
 
@@ -1499,7 +1515,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Alias suggestions update after a pause — debounced to avoid flooding the Claude API
   let _aliasDebounce = null;
   document.getElementById("expr-input").addEventListener("input", () => {
-    _unfreezeChart();
     clearTimeout(_aliasDebounce);
     _aliasDebounce = setTimeout(() => updateAliasesIncremental(), 600);
   });
@@ -1529,7 +1544,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Radio groups: auto-trigger on change
   ["f-gender", "f-rowtype", "f-chamber"].forEach(name => {
     document.querySelectorAll(`input[name="${name}"]`).forEach(el => {
-      el.addEventListener("change", () => { if (name === "f-chamber") _unfreezeChart(); autoSearch(); });
+      el.addEventListener("change", () => { autoSearch(); });
     });
   });
 
@@ -1777,7 +1792,7 @@ function _makeDateRangeRow(from, to) {
   row.querySelectorAll("input").forEach(inp => {
     if (_corpusDateMin) inp.min = _corpusDateMin;
     if (_corpusDateMax) inp.max = _corpusDateMax;
-    inp.addEventListener("change", () => { _unfreezeChart(); autoSearch(600); });
+    inp.addEventListener("change", () => { autoSearch(600); });
     inp.addEventListener("keydown", e => { if (e.key === "Enter") doSearch(1); });
   });
   return row;
@@ -2993,7 +3008,7 @@ function resetAll() {
 // ── Reset filters ──────────────────────────────────────────────────────────────
 function resetFilters() {
   _resultNids = null; _resultParties = null; _resultParlNos = null;
-  if (_chartSelection) { _chartSelection = null; _clearChartHighlight(); }
+  if (_chartSelection) { _chartSelection = null; _clearChartHighlight(); _unlockFilters(); _cancelLockHint(); }
   setDateRanges([{ from: _corpusDateMin, to: _corpusDateMax }]);
   document.querySelectorAll(".party-check, .group-check").forEach(c => {
     c.checked = false; c.indeterminate = false;
@@ -3433,12 +3448,52 @@ function _applyChartHighlight(year, chamber) {
   _chart.update('none');
 }
 
-let _chartClickInProgress = false;
+function _lockFilters() {
+  document.body.classList.add('chart-locked');
+}
+
+function _unlockFilters() {
+  document.body.classList.remove('chart-locked');
+}
+
+let _lockHintTimer = null;
+let _lockHintShown = false;
+
+function _scheduleLockHint() {
+  if (_lockHintShown) return;
+  _cancelLockHint();
+  _lockHintTimer = setTimeout(_showLockHint, 3000);
+}
+
+function _cancelLockHint() {
+  clearTimeout(_lockHintTimer);
+  _lockHintTimer = null;
+  const hint = document.getElementById('chart-lock-hint');
+  if (hint) hint.style.display = 'none';
+}
+
+function _showLockHint() {
+  if (_lockHintShown) return;
+  _lockHintShown = true;
+  const hint = document.getElementById('chart-lock-hint');
+  const canvas = document.getElementById('timeseries-chart');
+  if (!hint || !canvas) return;
+  const r = canvas.getBoundingClientRect();
+  const hintW = 230;
+  let left = r.left + r.width / 2 - hintW / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - hintW - 8));
+  hint.style.left = left + 'px';
+  hint.style.top  = (r.top - 52) + 'px';
+  hint.style.display = 'block';
+  setTimeout(_cancelLockHint, 5000);
+}
 
 function _unfreezeChart() {
-  if (!_chartSelection || _chartClickInProgress) return;
+  if (!_chartSelection) return;
   _chartSelection = null;
   _clearChartHighlight();
+  _unlockFilters();
+  _cancelLockHint();
 }
 
 function _clearChartHighlight() {
@@ -3464,6 +3519,8 @@ function _onChartBarClick(event, elements) {
   if (_chartSelection && _chartSelection.year === year && _chartSelection.chamber === chamberVal) {
     _chartSelection = null;
     _clearChartHighlight();
+    _unlockFilters();
+    _cancelLockHint();
 
     // Clear date range
     document.getElementById("date-ranges-container").innerHTML = "";
@@ -3476,10 +3533,11 @@ function _onChartBarClick(event, elements) {
     return;
   }
 
-  // New selection — suppress unfreeze during programmatic filter changes
-  _chartClickInProgress = true;
+  // New selection
   _chartSelection = { year, chamber: chamberVal };
   _applyChartHighlight(year, chamberVal);
+  _lockFilters();
+  _scheduleLockHint();
 
   // Set chamber radio
   const radio = document.getElementById("ch-" + chamberVal);
@@ -3494,7 +3552,6 @@ function _onChartBarClick(event, elements) {
   const dateBody = document.getElementById("fsb-date");
   if (dateBody && !dateBody.classList.contains("open")) toggleFilterBody("fsb-date");
 
-  _chartClickInProgress = false;
   autoSearch(100);
 }
 
