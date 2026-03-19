@@ -962,7 +962,7 @@ def search():
         except SyntaxError as e:
             return jsonify({"error": f"Expression syntax error: {e}"}), 400
 
-    terms = []
+    terms = collect_terms(tree) if tree is not None else []
     corpus_seeds = []
     facet_counts: dict = {}
 
