@@ -1092,23 +1092,31 @@ def search():
         if tree is None:
             matched = df
         elif chamber == "both" and not _SENATE.empty and not _HOUSE.empty:
+            # FTS5 path: query index → matching unique_ids → filter in-memory
+            # DataFrames → fetch body from parquet only for matched rows.
+            # Falls back to full PyArrow scan when FTS index is absent.
             _t1 = time.perf_counter()
             if _FTS_CONN is not None:
                 with _SCAN_SEMAPHORE:
                     matching_ids = _fts5_search(tree)
                 s_matched = _SENATE[_SENATE["unique_id"].isin(matching_ids)].copy()
                 h_matched = _HOUSE[_HOUSE["unique_id"].isin(matching_ids)].copy()
-                s_body = _get_body_col("senate")
-                h_body = _get_body_col("house")
-                s_matched["body"] = s_body.loc[s_matched["_parquet_idx"]].values
-                h_matched["body"] = h_body.loc[h_matched["_parquet_idx"]].values
                 if filters:
                     s_matched = _apply_filters(s_matched, filters)
                     h_matched = _apply_filters(h_matched, filters)
                 matched = pd.concat([s_matched, h_matched], ignore_index=True)
                 if case_sensitive and not matched.empty:
+                    # Load body only for case-sensitive post-filter then discard
+                    _sb = _get_body_col("senate")
+                    _hb = _get_body_col("house")
+                    _sm = matched["chamber"] == "senate"
+                    matched["body"] = ""
+                    if _sm.any():
+                        matched.loc[_sm,  "body"] = _sb.loc[matched.loc[_sm,  "_parquet_idx"]].values
+                    if (~_sm).any():
+                        matched.loc[~_sm, "body"] = _hb.loc[matched.loc[~_sm, "_parquet_idx"]].values
                     cs_masks = _build_masks(matched, collect_terms(tree), case_sensitive=True)
-                    matched  = matched[_eval_tree(tree, cs_masks)]
+                    matched  = matched[_eval_tree(tree, cs_masks)].drop(columns=["body"])
             else:
                 # Fallback: original PyArrow full-scan path
                 terms  = collect_terms(tree)
@@ -1128,20 +1136,22 @@ def search():
                     matched = pd.concat([fs.result(), fh.result()], ignore_index=True)
             _t2 = time.perf_counter()
         else:
+            # Single-chamber FTS5 path (same strategy as "both" above).
             _t1 = time.perf_counter()
             if _FTS_CONN is not None:
                 with _SCAN_SEMAPHORE:
                     matching_ids = _fts5_search(tree)
                 corpus = _get_corpus(chamber)
                 matched = corpus[corpus["unique_id"].isin(matching_ids)].copy()
-                body_s = _get_body_col(chamber)
-                matched["body"] = body_s.loc[matched["_parquet_idx"]].values
                 _t2 = time.perf_counter()
                 if filters:
                     matched = _apply_filters(matched, filters)
                 if case_sensitive and not matched.empty:
+                    # Load body only for case-sensitive post-filter then discard
+                    _bs = _get_body_col(chamber)
+                    matched["body"] = _bs.loc[matched["_parquet_idx"]].values
                     cs_masks = _build_masks(matched, collect_terms(tree), case_sensitive=True)
-                    matched  = matched[_eval_tree(tree, cs_masks)]
+                    matched  = matched[_eval_tree(tree, cs_masks)].drop(columns=["body"])
             else:
                 # Fallback: original PyArrow full-scan path
                 terms  = collect_terms(tree)
@@ -1170,7 +1180,13 @@ def search():
             "house":  [int(yr_house.get(y, 0))  for y in all_years],
         }
 
-        corpus_seeds = _extract_seeds(matched) if not matched.empty and "body" in matched.columns else []
+        if not matched.empty:
+            _seed_rows = matched.head(100).copy()
+            if "body" not in _seed_rows.columns:
+                _seed_rows["body"] = _load_body_for_display(_seed_rows)
+            corpus_seeds = _extract_seeds(_seed_rows)
+        else:
+            corpus_seeds = []
         facet_counts = _compute_facet_counts(matched)
         matched = _sort_df(matched, sort_col, ascending)
 
