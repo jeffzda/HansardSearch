@@ -187,6 +187,31 @@ def parse_expression(expr: str) -> dict:
     return _Parser(_tokenize(expr)).parse()
 
 
+def _ast_to_fts5(tree: dict) -> str:
+    """Translate an AST (TERM / AND / OR) into an FTS5 MATCH query string.
+
+    Translation rules:
+      - Single unambiguous word  → word
+      - Multi-word phrase or term containing a hyphen → "phrase words" (FTS5 phrase)
+      - AND  → (left AND right)
+      - OR   → (left OR right)
+    """
+    op = tree["op"]
+    if op == "TERM":
+        term = tree["term"]
+        words = term.split()
+        if len(words) == 1 and "-" not in term:
+            return term
+        # Phrase or hyphenated: strip hyphens, use FTS5 quoted phrase
+        clean = term.replace("-", " ").strip()
+        return f'"{clean}"'
+    if op == "AND":
+        return f"({_ast_to_fts5(tree['left'])} AND {_ast_to_fts5(tree['right'])})"
+    if op == "OR":
+        return f"({_ast_to_fts5(tree['left'])} OR {_ast_to_fts5(tree['right'])})"
+    raise ValueError(f"Unknown AST op: {op!r}")
+
+
 def collect_terms(tree: dict) -> list[str]:
     """Return all literal search terms from the AST (may contain duplicates)."""
     if tree["op"] == "TERM":

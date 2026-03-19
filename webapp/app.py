@@ -66,6 +66,7 @@ from search_corpus import (
     _build_masks,
     _eval_tree,
     _apply_filters,
+    _ast_to_fts5,
 )
 
 app = Flask(__name__, static_folder="static")
@@ -163,8 +164,9 @@ def login_required(f):
 
 
 BASE = Path(__file__).parent.parent
-_SENATE_PATH = BASE / "data/output/senate/corpus/senate_hansard_corpus_1998_to_2026.parquet"
-_HOUSE_PATH = BASE / "data/output/house/corpus/house_hansard_corpus_1998_to_2026.parquet"
+_SENATE_PATH  = BASE / "data/output/senate/corpus/senate_hansard_corpus_1998_to_2026.parquet"
+_HOUSE_PATH   = BASE / "data/output/house/corpus/house_hansard_corpus_1998_to_2026.parquet"
+_FTS_DB_PATH  = BASE / "data/output/fts/hansard_fts.db"
 
 
 # ── Corpus loading ─────────────────────────────────────────────────────────────
@@ -343,6 +345,24 @@ if _speaker_path.exists() and not _HOUSE.empty:
     _HOUSE = _resolve_presiding_officers(_HOUSE, _build_presiding_map(_SPKR_LOOKUP), "electorate", _NID_TO_NAME)
 
 print("Corpora ready.")
+
+# ── FTS5 index connection ───────────────────────────────────────────────────
+if _FTS_DB_PATH.exists():
+    _FTS_CONN = sqlite3.connect(str(_FTS_DB_PATH), check_same_thread=False)
+    print(f"  FTS5 index loaded: {_FTS_DB_PATH}")
+else:
+    _FTS_CONN = None
+    print(f"  FTS5 index not found ({_FTS_DB_PATH}); falling back to PyArrow scan")
+
+
+def _fts5_search(tree: dict) -> set:
+    """Query the FTS5 index and return a set of matching unique_ids."""
+    fts5_query = _ast_to_fts5(tree)
+    rows = _FTS_CONN.execute(
+        "SELECT unique_id FROM speeches_fts WHERE body MATCH ?",
+        (fts5_query,),
+    ).fetchall()
+    return {r[0] for r in rows}
 
 
 import threading as _threading, time as _time
@@ -1072,37 +1092,68 @@ def search():
         if tree is None:
             matched = df
         elif chamber == "both" and not _SENATE.empty and not _HOUSE.empty:
-            terms  = collect_terms(tree)
-            s_body = _get_body_col("senate")
-            h_body = _get_body_col("house")
             _t1 = time.perf_counter()
-            def _search_one(src, bdy, filt):
-                # Always scan full body (zero-copy, fast regardless of filters)
-                masks = _build_masks(pd.DataFrame({"body": bdy}), terms, case_sensitive)
-                mask  = _eval_tree(tree, masks)
-                res   = src[mask].copy()
-                res["body"] = bdy[mask].values
-                # Post-scan metadata filter — fast, result set is small
-                if filt:
-                    res = _apply_filters(res, filt)
-                return res
-            with _SCAN_SEMAPHORE:
-                fs = _THREAD_POOL.submit(_search_one, _SENATE, s_body, filters)
-                fh = _THREAD_POOL.submit(_search_one, _HOUSE,  h_body, filters)
-                matched = pd.concat([fs.result(), fh.result()], ignore_index=True)
+            if _FTS_CONN is not None:
+                with _SCAN_SEMAPHORE:
+                    matching_ids = _fts5_search(tree)
+                s_matched = _SENATE[_SENATE["unique_id"].isin(matching_ids)].copy()
+                h_matched = _HOUSE[_HOUSE["unique_id"].isin(matching_ids)].copy()
+                s_body = _get_body_col("senate")
+                h_body = _get_body_col("house")
+                s_matched["body"] = s_body.loc[s_matched["_parquet_idx"]].values
+                h_matched["body"] = h_body.loc[h_matched["_parquet_idx"]].values
+                if filters:
+                    s_matched = _apply_filters(s_matched, filters)
+                    h_matched = _apply_filters(h_matched, filters)
+                matched = pd.concat([s_matched, h_matched], ignore_index=True)
+                if case_sensitive and not matched.empty:
+                    cs_masks = _build_masks(matched, collect_terms(tree), case_sensitive=True)
+                    matched  = matched[_eval_tree(tree, cs_masks)]
+            else:
+                # Fallback: original PyArrow full-scan path
+                terms  = collect_terms(tree)
+                s_body = _get_body_col("senate")
+                h_body = _get_body_col("house")
+                def _search_one(src, bdy, filt):
+                    masks = _build_masks(pd.DataFrame({"body": bdy}), terms, case_sensitive)
+                    mask  = _eval_tree(tree, masks)
+                    res   = src[mask].copy()
+                    res["body"] = bdy[mask].values
+                    if filt:
+                        res = _apply_filters(res, filt)
+                    return res
+                with _SCAN_SEMAPHORE:
+                    fs = _THREAD_POOL.submit(_search_one, _SENATE, s_body, filters)
+                    fh = _THREAD_POOL.submit(_search_one, _HOUSE,  h_body, filters)
+                    matched = pd.concat([fs.result(), fh.result()], ignore_index=True)
             _t2 = time.perf_counter()
         else:
-            terms  = collect_terms(tree)
-            body_s = _get_body_col(chamber)   # full body, always zero-copy
             _t1 = time.perf_counter()
-            with _SCAN_SEMAPHORE:
-                masks  = _build_masks(pd.DataFrame({"body": body_s}), terms, case_sensitive)
-                mask   = _eval_tree(tree, masks)
-            _t2 = time.perf_counter()
-            matched = _get_corpus(chamber)[mask].copy()
-            matched["body"] = body_s[mask].values
-            if filters:
-                matched = _apply_filters(matched, filters)
+            if _FTS_CONN is not None:
+                with _SCAN_SEMAPHORE:
+                    matching_ids = _fts5_search(tree)
+                corpus = _get_corpus(chamber)
+                matched = corpus[corpus["unique_id"].isin(matching_ids)].copy()
+                body_s = _get_body_col(chamber)
+                matched["body"] = body_s.loc[matched["_parquet_idx"]].values
+                _t2 = time.perf_counter()
+                if filters:
+                    matched = _apply_filters(matched, filters)
+                if case_sensitive and not matched.empty:
+                    cs_masks = _build_masks(matched, collect_terms(tree), case_sensitive=True)
+                    matched  = matched[_eval_tree(tree, cs_masks)]
+            else:
+                # Fallback: original PyArrow full-scan path
+                terms  = collect_terms(tree)
+                body_s = _get_body_col(chamber)
+                with _SCAN_SEMAPHORE:
+                    masks  = _build_masks(pd.DataFrame({"body": body_s}), terms, case_sensitive)
+                    mask   = _eval_tree(tree, masks)
+                _t2 = time.perf_counter()
+                matched = _get_corpus(chamber)[mask].copy()
+                matched["body"] = body_s[mask].values
+                if filters:
+                    matched = _apply_filters(matched, filters)
 
         total        = len(matched)
         senate_count = int((matched["chamber"] == "senate").sum()) if "chamber" in matched.columns else 0
