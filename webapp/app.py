@@ -349,9 +349,13 @@ print("Corpora ready.")
 # ── FTS5 index connection ───────────────────────────────────────────────────
 if _FTS_DB_PATH.exists():
     _FTS_CONN = sqlite3.connect(str(_FTS_DB_PATH), check_same_thread=False)
-    print(f"  FTS5 index loaded: {_FTS_DB_PATH}")
+    # Senate rows were inserted first (rowid 1..N); house rows follow.
+    # This offset maps (chamber, parquet_idx) → FTS5 rowid for direct body lookup.
+    _FTS_SENATE_OFFSET: int = len(_SENATE)
+    print(f"  FTS5 index loaded: {_FTS_DB_PATH} (senate_offset={_FTS_SENATE_OFFSET:,})")
 else:
     _FTS_CONN = None
+    _FTS_SENATE_OFFSET: int = 0
     print(f"  FTS5 index not found ({_FTS_DB_PATH}); falling back to PyArrow scan")
 
 
@@ -408,11 +412,47 @@ def _prewarm_body_cache():
     _get_body_col("senate")
     _get_body_col("house")
 
-_threading.Thread(target=_prewarm_body_cache, daemon=True, name="body-prewarm").start()
+# Only prewarm parquet body cache when FTS5 is unavailable; otherwise body
+# is fetched on demand from the FTS5 index, saving ~600MB of RSS.
+if _FTS_CONN is None:
+    _threading.Thread(target=_prewarm_body_cache, daemon=True, name="body-prewarm").start()
+
+
+def _fts5_rowid(chamber: str, parquet_idx: int) -> int:
+    """Map (chamber, parquet_idx) to the FTS5 rowid used at index-build time."""
+    if chamber == "senate":
+        return parquet_idx + 1
+    return _FTS_SENATE_OFFSET + parquet_idx + 1
 
 
 def _load_body_for_display(page_rows: pd.DataFrame) -> pd.Series:
-    """Load body text for result display rows using the warm body cache."""
+    """Load body text for the given rows.
+
+    When the FTS5 index is available, fetches body by rowid (O(log N) per row,
+    no full parquet column loaded).  Falls back to the parquet body cache otherwise.
+    """
+    if _FTS_CONN is not None:
+        rowids = [
+            _fts5_rowid(str(row.get("chamber", "senate")), int(row.get("_parquet_idx", 0)))
+            for _, row in page_rows.iterrows()
+        ]
+        if rowids:
+            placeholders = ",".join("?" * len(rowids))
+            rowid_map = {
+                rid: body or ""
+                for rid, body in _FTS_CONN.execute(
+                    f"SELECT rowid, body FROM speeches_fts WHERE rowid IN ({placeholders})",
+                    rowids,
+                ).fetchall()
+            }
+        else:
+            rowid_map = {}
+        return pd.Series(
+            [rowid_map.get(r, "") for r in rowids],
+            index=page_rows.index,
+        )
+
+    # Fallback: parquet body cache
     senate_body = None
     house_body  = None
     bodies = []
