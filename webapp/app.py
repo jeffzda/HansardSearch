@@ -1319,7 +1319,7 @@ def suggest_aliases():
     try:
         client = anthropic.Anthropic()
         msg = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=512,
             temperature=0,
             system=(
@@ -1373,7 +1373,7 @@ def suggest_aliases():
         if len(clean) >= 8:
             break
     _alias_cache[cache_key] = clean
-    _log({"event": "aliases", "term": term, "source": "sonnet", "aliases": clean})
+    _log({"event": "aliases", "term": term, "source": "haiku", "aliases": clean})
     return jsonify({"aliases": clean})
 
 
