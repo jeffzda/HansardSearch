@@ -1377,6 +1377,16 @@ def suggest_aliases():
     return jsonify({"aliases": clean})
 
 
+@app.route("/api/suggest_searches")
+def suggest_searches():
+    txt_path = BASE / "data" / "suggested_searches_terms.txt"
+    try:
+        return Response(txt_path.read_text(encoding="utf-8"),
+                        mimetype="text/plain; charset=utf-8")
+    except FileNotFoundError:
+        return Response("", status=404)
+
+
 @app.route("/api/download", methods=["POST"])
 def download():
     """Return CSV of all matches (no pagination)."""

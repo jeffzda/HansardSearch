@@ -586,6 +586,24 @@
     #search-controls {
       display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     }
+    #suggest-btn {
+      background: none;
+      border: 1px solid var(--tn-bg-hi2);
+      border-radius: 4px;
+      color: var(--tn-comment);
+      cursor: pointer;
+      font-size: 0.78rem;
+      padding: 2px 8px;
+      white-space: nowrap;
+      transition: color 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+    }
+    #suggest-btn:hover:not(:disabled) { color: var(--tn-fg); border-color: var(--tn-blue); }
+    #suggest-btn:disabled { opacity: 0.4; cursor: default; }
+    @media (max-width: 519px) {
+      #suggest-btn     { order: 10; }
+      #case-sensitive-wrap { order: 11; }
+    }
     @media (max-width: 960px) {
       body.searched #search-pin-group { flex: 1 1 100%; max-width: none; order: 100; padding: 5px 0 4px; border-top: 1px solid var(--tn-bg-hi2); margin-top: -14px; }
     }
@@ -876,7 +894,8 @@
         <label class="form-check-label small text-muted" for="ch-both">Both</label>
       </div>
       <div style="width:1px;height:14px;background:var(--tn-bg-hi2);margin:0 2px;flex-shrink:0;"></div>
-      <div class="form-check form-switch mb-0">
+      <button id="suggest-btn" onclick="suggestSearch()">✦ Suggest a search</button>
+      <div class="form-check form-switch mb-0" id="case-sensitive-wrap">
         <input class="form-check-input" type="checkbox" id="f-case-sensitive" />
         <label class="form-check-label small text-muted" for="f-case-sensitive">Case sensitive</label>
       </div>
@@ -3207,6 +3226,35 @@ function runDemoExample() {
 // ── Clear search ───────────────────────────────────────────────────────────────
 function runExampleSearch(query) {
   document.getElementById("expr-input").value = query;
+  doSearch(1);
+}
+
+// ── Suggest a Search ─────────────────────────────────────────────────────────
+let _suggestTerms = null;
+
+async function loadSuggestTerms() {
+  if (_suggestTerms !== null) return _suggestTerms;
+  try {
+    const resp = await fetch("/api/suggest_searches");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = await resp.text();
+    _suggestTerms = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+  } catch (e) {
+    console.warn("suggest_searches: failed to load", e);
+    _suggestTerms = [];
+  }
+  if (_suggestTerms.length === 0) {
+    const btn = document.getElementById("suggest-btn");
+    if (btn) btn.disabled = true;
+  }
+  return _suggestTerms;
+}
+
+async function suggestSearch() {
+  const terms = await loadSuggestTerms();
+  if (!terms.length) return;
+  const term = terms[Math.floor(Math.random() * terms.length)];
+  document.getElementById("expr-input").value = term;
   doSearch(1);
 }
 
