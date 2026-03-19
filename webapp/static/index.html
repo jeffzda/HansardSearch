@@ -3631,6 +3631,7 @@ document.addEventListener("click", e => {
 let _chart = null;
 let _CHART_YEARS = Array.from({ length: 29 }, (_, i) => String(1998 + i)); // updated in loadMetadata
 let _chartSelection = null;   // {year, chamber} or null — bar clicked by user
+let _chartBarClicked = false; // flag: Chart.js bar click fired this tick (suppress container handler)
 let _cachedTimeseries = null; // last unfiltered timeseries, preserved while selection is active
 
 const _CHART_LABEL_COLOR = "#928374";          // --tn-comment, works in dark + light
@@ -3639,7 +3640,14 @@ const _CHART_GRID_COLOR  = "rgba(146,131,116,0.18)";
 const _CHART_OPTIONS = {
   responsive: true,
   maintainAspectRatio: false,
-  onClick: (event, elements) => _onChartBarClick(event, elements),
+  onClick: (event, elements) => {
+    if (!elements.length) {
+      if (_chartSelection) { _unfreezeChart(); autoSearch(100); }
+      return;
+    }
+    _chartBarClicked = true;
+    _onChartBarClick(event, elements);
+  },
   onHover: (event, elements) => {
     event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
   },
@@ -3674,6 +3682,12 @@ const _CHART_OPTIONS = {
 function initChart() {
   const container = document.getElementById("chart-container");
   container.classList.remove("d-none");
+  container.addEventListener("click", () => {
+    if (_chartBarClicked) { _chartBarClicked = false; return; }
+    if (!_chartSelection) return;
+    _unfreezeChart();
+    autoSearch(100);
+  });
   const ctx = document.getElementById("timeseries-chart").getContext("2d");
   // Build empty year axis 1998–2026
   _chart = new Chart(ctx, {
