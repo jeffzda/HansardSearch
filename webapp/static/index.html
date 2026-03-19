@@ -727,11 +727,6 @@
     #reading-pane {
       overflow-y: auto; padding: 0 20px 70px;
     }
-    .ctx-expand-btn {
-      text-align: center; padding: 6px; color: var(--tn-blue);
-      font-size: 0.8rem; cursor: pointer; opacity: 0.7; user-select: none;
-    }
-    .ctx-expand-btn:hover { opacity: 1; text-decoration: underline; }
     #sidebar-backdrop {
       display: none; position: fixed; inset: 0;
       background: rgba(0,0,0,0.35); z-index: 1039;
@@ -1251,8 +1246,6 @@ let _selectedMatchId = null;      // match_id of currently selected result card
 let _ctxSpeeches   = [];          // all speeches from day_context for current selection
 let _ctxMatchId    = null;        // match_id of speech loaded in reading pane
 let _ctxTargetIdx  = -1;         // index of target speech in _ctxSpeeches
-let _ctxStartIdx   = -1;         // current window start (inclusive)
-let _ctxEndIdx     = -1;         // current window end (inclusive)
 
 // ── Sidebar toggle ──────────────────────────────────────────────────────────────
 function _closeSidebarAnimated() {
@@ -4012,50 +4005,14 @@ function setLoading(on) {
 }
 
 // ── Context (reading pane) ────────────────────────────────────────────────────
-function _isStageDirSpeech(sp) {
-  return /^the\s/i.test(sp.name)
-    || /^(mr|madam)\s+(speaker|deputy\s+speaker|acting\s+speaker|president|deputy\s+president|acting\s+president|chair)/i.test(sp.name)
-    || (sp.is_interject && sp.body.trim().length < 80);
-}
 
-// Walk backward from idx-1, return index of next non-stage speech, or -1
-function _prevSubstIdx(idx) {
-  for (let i = idx - 1; i >= 0; i--) {
-    if (!_isStageDirSpeech(_ctxSpeeches[i])) return i;
-  }
-  return -1;
-}
-
-// Walk forward from idx+1, return index of next non-stage speech, or -1
-function _nextSubstIdx(idx) {
-  for (let i = idx + 1; i < _ctxSpeeches.length; i++) {
-    if (!_isStageDirSpeech(_ctxSpeeches[i])) return i;
-  }
-  return -1;
-}
-
-function _renderContextWindow(scroll = true) {
+function _renderContextWindow() {
   const bodyEl = document.getElementById("reading-pane-body");
   bodyEl.innerHTML = "";
   const speeches = _ctxSpeeches;
   const terms = extractSearchTerms(_lastFullExpression || document.getElementById("expr-input").value.trim());
 
-  const canExpandAbove = _prevSubstIdx(_ctxStartIdx) !== -1;
-  const canExpandBelow = _nextSubstIdx(_ctxEndIdx)   !== -1;
-
-  if (canExpandAbove) {
-    const btn = document.createElement("div");
-    btn.className = "ctx-expand-btn";
-    btn.textContent = "↑ previous";
-    btn.onclick = () => {
-      const prev = _prevSubstIdx(_ctxStartIdx);
-      if (prev !== -1) _ctxStartIdx = prev;
-      _renderContextWindow(false);
-    };
-    bodyEl.appendChild(btn);
-  }
-
-  for (let i = _ctxStartIdx; i <= _ctxEndIdx; i++) {
+  for (let i = 0; i < speeches.length; i++) {
     const sp = speeches[i];
     const isTarget = sp.match_id === _ctxMatchId;
     const div = document.createElement("div");
@@ -4082,26 +4039,10 @@ function _renderContextWindow(scroll = true) {
     bodyEl.appendChild(div);
   }
 
-  if (canExpandBelow) {
-    const btn = document.createElement("div");
-    btn.className = "ctx-expand-btn";
-    btn.textContent = "↓ next";
-    btn.onclick = () => {
-      const next = _nextSubstIdx(_ctxEndIdx);
-      if (next !== -1) _ctxEndIdx = next;
-      _renderContextWindow(false);
-    };
-    bodyEl.appendChild(btn);
-  }
-
-  if (scroll) {
-    const headerEl = document.getElementById("reading-pane-header");
-    if (headerEl && headerEl.style.display !== 'none') {
-      headerEl.scrollIntoView({ block: 'start', behavior: 'instant' });
-    } else {
-      const pane = document.getElementById("reading-pane");
-      if (pane) pane.scrollTop = 0;
-    }
+  // Scroll the target speech to the centre of the reading pane
+  const targetEl = document.getElementById("ctx-" + _ctxMatchId);
+  if (targetEl) {
+    targetEl.scrollIntoView({ block: "center", behavior: "instant" });
   }
 }
 
@@ -4127,12 +4068,6 @@ async function showContext(matchId, date, chamber) {
   _ctxSpeeches = data.speeches || [];
   _ctxTargetIdx = _ctxSpeeches.findIndex(sp => sp.match_id === matchId);
   if (_ctxTargetIdx === -1) _ctxTargetIdx = 0;
-
-  // Initial window: selected turn + one substantive turn above and below
-  const _initPrev = _prevSubstIdx(_ctxTargetIdx);
-  const _initNext = _nextSubstIdx(_ctxTargetIdx);
-  _ctxStartIdx = _initPrev !== -1 ? _initPrev : _ctxTargetIdx;
-  _ctxEndIdx   = _initNext !== -1 ? _initNext : _ctxTargetIdx;
 
   _renderContextWindow();
 }
