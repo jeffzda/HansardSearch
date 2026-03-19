@@ -2752,7 +2752,6 @@ async function doSearch(page) {
     updateCombinedExpr();
     if (mainExpr) {
       _setSearchBtnMode("related");
-      updateAliasesIncremental();
     } else {
       _setSearchBtnMode("search");
       _selectedAliases.clear();
@@ -3532,6 +3531,7 @@ function toggleAliases() {
   if (willShow) {
     container.classList.remove("d-none");
     btn.classList.add("active");
+    updateAliasesIncremental();
     const r = btn.getBoundingClientRect();
     const popupW = 300;
     let left = r.right - popupW;
@@ -3681,8 +3681,8 @@ function initChart() {
     data: {
       labels: _CHART_YEARS,
       datasets: [
-        { label: "Senate", data: Array(_CHART_YEARS.length).fill(0), backgroundColor: "rgba(158,61,31,0.75)",  borderColor: "rgba(158,61,31,1)",  borderWidth: 1 },
         { label: "House",  data: Array(_CHART_YEARS.length).fill(0), backgroundColor: "rgba(78,107,74,0.75)",  borderColor: "rgba(78,107,74,1)",  borderWidth: 1 },
+        { label: "Senate", data: Array(_CHART_YEARS.length).fill(0), backgroundColor: "rgba(158,61,31,0.75)",  borderColor: "rgba(158,61,31,1)",  borderWidth: 1 },
       ],
     },
     options: _CHART_OPTIONS,
@@ -3714,8 +3714,8 @@ function renderChart(data) {
 
   _chart.data.labels = axisYears;
   _chart.data.datasets = [
-    { label: "Senate", data: senData, backgroundColor: "rgba(158,61,31,0.75)",  borderColor: "rgba(158,61,31,1)",  borderWidth: 1 },
     { label: "House",  data: houData, backgroundColor: "rgba(78,107,74,0.75)",  borderColor: "rgba(78,107,74,1)",  borderWidth: 1 },
+    { label: "Senate", data: senData, backgroundColor: "rgba(158,61,31,0.75)",  borderColor: "rgba(158,61,31,1)",  borderWidth: 1 },
   ];
   _chart.update('none');
 }
