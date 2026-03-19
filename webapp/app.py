@@ -355,14 +355,16 @@ else:
     print(f"  FTS5 index not found ({_FTS_DB_PATH}); falling back to PyArrow scan")
 
 
-def _fts5_search(tree: dict) -> set:
-    """Query the FTS5 index and return a set of matching unique_ids."""
+def _fts5_search(tree: dict) -> dict:
+    """Query the FTS5 index; return {chamber: frozenset[parquet_idx]}."""
     fts5_query = _ast_to_fts5(tree)
     rows = _FTS_CONN.execute(
-        "SELECT unique_id FROM speeches_fts WHERE body MATCH ?",
+        "SELECT chamber, parquet_idx FROM speeches_fts WHERE body MATCH ?",
         (fts5_query,),
     ).fetchall()
-    return {r[0] for r in rows}
+    senate_idxs = frozenset(r[1] for r in rows if r[0] == "senate")
+    house_idxs  = frozenset(r[1] for r in rows if r[0] == "house")
+    return {"senate": senate_idxs, "house": house_idxs}
 
 
 import threading as _threading, time as _time
@@ -1098,9 +1100,9 @@ def search():
             _t1 = time.perf_counter()
             if _FTS_CONN is not None:
                 with _SCAN_SEMAPHORE:
-                    matching_ids = _fts5_search(tree)
-                s_matched = _SENATE[_SENATE["unique_id"].isin(matching_ids)].copy()
-                h_matched = _HOUSE[_HOUSE["unique_id"].isin(matching_ids)].copy()
+                    match_sets = _fts5_search(tree)
+                s_matched = _SENATE[_SENATE["_parquet_idx"].isin(match_sets["senate"])].copy()
+                h_matched = _HOUSE[_HOUSE["_parquet_idx"].isin(match_sets["house"])].copy()
                 if filters:
                     s_matched = _apply_filters(s_matched, filters)
                     h_matched = _apply_filters(h_matched, filters)
@@ -1140,9 +1142,9 @@ def search():
             _t1 = time.perf_counter()
             if _FTS_CONN is not None:
                 with _SCAN_SEMAPHORE:
-                    matching_ids = _fts5_search(tree)
+                    match_sets = _fts5_search(tree)
                 corpus = _get_corpus(chamber)
-                matched = corpus[corpus["unique_id"].isin(matching_ids)].copy()
+                matched = corpus[corpus["_parquet_idx"].isin(match_sets.get(chamber, frozenset()))].copy()
                 _t2 = time.perf_counter()
                 if filters:
                     matched = _apply_filters(matched, filters)
