@@ -164,24 +164,20 @@ def login_required(f):
 
 
 BASE = Path(__file__).parent.parent
-_SENATE_PATH  = BASE / "data/output/senate/corpus/senate_hansard_corpus_1998_to_2026.parquet"
-_HOUSE_PATH   = BASE / "data/output/house/corpus/house_hansard_corpus_1998_to_2026.parquet"
 _FTS_DB_PATH  = BASE / "data/output/fts/hansard_fts.db"
 
 
 # ── Corpus loading ─────────────────────────────────────────────────────────────
 
-def _load_corpus(path: Path, chamber: str) -> pd.DataFrame:
-    if not path.exists():
-        print(f"  WARNING: corpus file not found: {path}")
-        return pd.DataFrame()
-    df = pd.read_parquet(path)
-    if "body" in df.columns:
-        df = df.drop(columns=["body"])   # body held on disk, loaded per-request
+def _load_corpus(conn: sqlite3.Connection, chamber: str) -> pd.DataFrame:
+    df = pd.read_sql_query(
+        'SELECT rowid AS _rowid, * FROM speeches WHERE chamber = ?',
+        conn, params=(chamber,)
+    )
+    df = df.drop(columns=["body", "chamber"], errors="ignore")
     df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
     df["chamber"] = chamber
-    df["_parquet_idx"] = range(len(df))  # preserve original parquet row position
-    print(f"  Loaded {chamber}: {len(df):,} rows (body held on disk)")
+    print(f"  Loaded {chamber}: {len(df):,} rows")
     return df
 
 
@@ -321,8 +317,9 @@ def _resolve_presiding_officers(df: pd.DataFrame, presiding_map: list, role_col:
 
 
 print("Loading corpora…")
-_SENATE: pd.DataFrame = _load_corpus(_SENATE_PATH, "senate")
-_HOUSE: pd.DataFrame = _load_corpus(_HOUSE_PATH, "house")
+_FTS_CONN = sqlite3.connect(str(_FTS_DB_PATH), check_same_thread=False)
+_SENATE: pd.DataFrame = _load_corpus(_FTS_CONN, "senate")
+_HOUSE: pd.DataFrame  = _load_corpus(_FTS_CONN, "house")
 
 _LOOKUP_BASE = BASE / "data/lookup"
 _NID_TO_NAME = _build_name_display_map(_LOOKUP_BASE)
@@ -345,129 +342,37 @@ if _speaker_path.exists() and not _HOUSE.empty:
     _HOUSE = _resolve_presiding_officers(_HOUSE, _build_presiding_map(_SPKR_LOOKUP), "electorate", _NID_TO_NAME)
 
 print("Corpora ready.")
+print(f"  SQLite DB: {_FTS_DB_PATH}")
 
-# ── FTS5 index connection ───────────────────────────────────────────────────
-if _FTS_DB_PATH.exists():
-    _FTS_CONN = sqlite3.connect(str(_FTS_DB_PATH), check_same_thread=False)
-    # Senate rows were inserted first (rowid 1..N); house rows follow.
-    # This offset maps (chamber, parquet_idx) → FTS5 rowid for direct body lookup.
-    _FTS_SENATE_OFFSET: int = len(_SENATE)
-    print(f"  FTS5 index loaded: {_FTS_DB_PATH} (senate_offset={_FTS_SENATE_OFFSET:,})")
-else:
-    _FTS_CONN = None
-    _FTS_SENATE_OFFSET: int = 0
-    print(f"  FTS5 index not found ({_FTS_DB_PATH}); falling back to PyArrow scan")
+import threading as _threading
+_SCAN_SEMAPHORE  = _threading.Semaphore(1)  # serialise heavy scans on single-core VPS
 
 
 def _fts5_search(tree: dict) -> dict:
-    """Query the FTS5 index; return {chamber: frozenset[parquet_idx]}."""
+    """Query FTS5 index; return {chamber: frozenset[rowid]}."""
     fts5_query = _ast_to_fts5(tree)
     rows = _FTS_CONN.execute(
-        "SELECT chamber, parquet_idx FROM speeches_fts WHERE body MATCH ?",
-        (fts5_query,),
+        "SELECT rowid FROM speeches_fts WHERE body MATCH ?", (fts5_query,)
     ).fetchall()
-    senate_idxs = frozenset(r[1] for r in rows if r[0] == "senate")
-    house_idxs  = frozenset(r[1] for r in rows if r[0] == "house")
-    return {"senate": senate_idxs, "house": house_idxs}
-
-
-import threading as _threading, time as _time
-_body_cache     : dict              = {}   # "senate" | "house" → (pd.Series, float)
-_body_lock       = _threading.Lock()
-_SCAN_SEMAPHORE  = _threading.Semaphore(1)  # serialise heavy scans on single-core VPS
-
-def _get_body_col(chamber: str) -> pd.Series:
-    """Load body column from parquet; TTL-cached for 3600s to avoid repeated disk reads."""
-    ttl = 3600
-    now = _time.monotonic()
-
-    def _load(path):
-        return (
-            pd.read_parquet(path, columns=["body"], dtype_backend="pyarrow")
-            ["body"]
-            .fillna("")
-        )
-
-    with _body_lock:
-        if chamber in ("senate", "house"):
-            cached, ts = _body_cache.get(chamber, (None, 0))
-            if cached is not None and now - ts < ttl:
-                return cached
-            s = _load(_SENATE_PATH if chamber == "senate" else _HOUSE_PATH)
-            _body_cache[chamber] = (s, now)
-            return s
-        else:  # "both"
-            s_cached, s_ts = _body_cache.get("senate", (None, 0))
-            h_cached, h_ts = _body_cache.get("house",  (None, 0))
-            if s_cached is None or now - s_ts >= ttl:
-                s_cached = _load(_SENATE_PATH)
-                _body_cache["senate"] = (s_cached, now)
-            if h_cached is None or now - h_ts >= ttl:
-                h_cached = _load(_HOUSE_PATH)
-                _body_cache["house"] = (h_cached, now)
-            return pd.concat([s_cached, h_cached], ignore_index=True)
-
-
-def _prewarm_body_cache():
-    _get_body_col("senate")
-    _get_body_col("house")
-
-# Only prewarm parquet body cache when FTS5 is unavailable; otherwise body
-# is fetched on demand from the FTS5 index, saving ~600MB of RSS.
-if _FTS_CONN is None:
-    _threading.Thread(target=_prewarm_body_cache, daemon=True, name="body-prewarm").start()
-
-
-def _fts5_rowid(chamber: str, parquet_idx: int) -> int:
-    """Map (chamber, parquet_idx) to the FTS5 rowid used at index-build time."""
-    if chamber == "senate":
-        return parquet_idx + 1
-    return _FTS_SENATE_OFFSET + parquet_idx + 1
+    all_ids = frozenset(r[0] for r in rows)
+    senate_ids = frozenset(_SENATE.loc[_SENATE["_rowid"].isin(all_ids), "_rowid"])
+    house_ids  = frozenset(_HOUSE.loc[_HOUSE["_rowid"].isin(all_ids),  "_rowid"])
+    return {"senate": senate_ids, "house": house_ids}
 
 
 def _load_body_for_display(page_rows: pd.DataFrame) -> pd.Series:
-    """Load body text for the given rows.
-
-    When the FTS5 index is available, fetches body by rowid (O(log N) per row,
-    no full parquet column loaded).  Falls back to the parquet body cache otherwise.
-    """
-    if _FTS_CONN is not None:
-        rowids = [
-            _fts5_rowid(str(row.get("chamber", "senate")), int(row.get("_parquet_idx", 0)))
-            for _, row in page_rows.iterrows()
-        ]
-        if rowids:
-            placeholders = ",".join("?" * len(rowids))
-            rowid_map = {
-                rid: body or ""
-                for rid, body in _FTS_CONN.execute(
-                    f"SELECT rowid, body FROM speeches_fts WHERE rowid IN ({placeholders})",
-                    rowids,
-                ).fetchall()
-            }
-        else:
-            rowid_map = {}
-        return pd.Series(
-            [rowid_map.get(r, "") for r in rowids],
-            index=page_rows.index,
-        )
-
-    # Fallback: parquet body cache
-    senate_body = None
-    house_body  = None
-    bodies = []
-    for _, row in page_rows.iterrows():
-        ch   = str(row.get("chamber", "senate"))
-        pidx = int(row.get("_parquet_idx", 0))
-        if ch == "senate":
-            if senate_body is None:
-                senate_body = _get_body_col("senate")
-            bodies.append(str(senate_body.iloc[pidx]))
-        else:
-            if house_body is None:
-                house_body = _get_body_col("house")
-            bodies.append(str(house_body.iloc[pidx]))
-    return pd.Series(bodies, index=page_rows.index)
+    """Fetch body text from speeches table by rowid."""
+    rowids = list(page_rows["_rowid"].astype(int))
+    if not rowids:
+        return pd.Series([], index=page_rows.index, dtype=str)
+    ph = ",".join("?" * len(rowids))
+    rowid_map = dict(_FTS_CONN.execute(
+        f"SELECT rowid, body FROM speeches WHERE rowid IN ({ph})", rowids
+    ).fetchall())
+    return pd.Series(
+        [rowid_map.get(int(r), "") for r in page_rows["_rowid"]],
+        index=page_rows.index,
+    )
 
 
 _DIV_TYPE_ORDER = ["Inner Metropolitan", "Outer Metropolitan", "Provincial", "Rural", "Other"]
@@ -1138,74 +1043,43 @@ def search():
             # DataFrames → fetch body from parquet only for matched rows.
             # Falls back to full PyArrow scan when FTS index is absent.
             _t1 = time.perf_counter()
-            if _FTS_CONN is not None:
-                with _SCAN_SEMAPHORE:
-                    match_sets = _fts5_search(tree)
-                s_matched = _SENATE[_SENATE["_parquet_idx"].isin(match_sets["senate"])].copy()
-                h_matched = _HOUSE[_HOUSE["_parquet_idx"].isin(match_sets["house"])].copy()
-                if filters:
-                    s_matched = _apply_filters(s_matched, filters)
-                    h_matched = _apply_filters(h_matched, filters)
-                matched = pd.concat([s_matched, h_matched], ignore_index=True)
-                if case_sensitive and not matched.empty:
-                    # Load body only for case-sensitive post-filter then discard
-                    _sb = _get_body_col("senate")
-                    _hb = _get_body_col("house")
-                    _sm = matched["chamber"] == "senate"
-                    matched["body"] = ""
-                    if _sm.any():
-                        matched.loc[_sm,  "body"] = _sb.loc[matched.loc[_sm,  "_parquet_idx"]].values
-                    if (~_sm).any():
-                        matched.loc[~_sm, "body"] = _hb.loc[matched.loc[~_sm, "_parquet_idx"]].values
-                    cs_masks = _build_masks(matched, collect_terms(tree), case_sensitive=True)
-                    matched  = matched[_eval_tree(tree, cs_masks)].drop(columns=["body"])
-            else:
-                # Fallback: original PyArrow full-scan path
-                terms  = collect_terms(tree)
-                s_body = _get_body_col("senate")
-                h_body = _get_body_col("house")
-                def _search_one(src, bdy, filt):
-                    masks = _build_masks(pd.DataFrame({"body": bdy}), terms, case_sensitive)
-                    mask  = _eval_tree(tree, masks)
-                    res   = src[mask].copy()
-                    res["body"] = bdy[mask].values
-                    if filt:
-                        res = _apply_filters(res, filt)
-                    return res
-                with _SCAN_SEMAPHORE:
-                    fs = _THREAD_POOL.submit(_search_one, _SENATE, s_body, filters)
-                    fh = _THREAD_POOL.submit(_search_one, _HOUSE,  h_body, filters)
-                    matched = pd.concat([fs.result(), fh.result()], ignore_index=True)
+            with _SCAN_SEMAPHORE:
+                match_sets = _fts5_search(tree)
+            s_matched = _SENATE[_SENATE["_rowid"].isin(match_sets["senate"])].copy()
+            h_matched = _HOUSE[_HOUSE["_rowid"].isin(match_sets["house"])].copy()
+            if filters:
+                s_matched = _apply_filters(s_matched, filters)
+                h_matched = _apply_filters(h_matched, filters)
+            matched = pd.concat([s_matched, h_matched], ignore_index=True)
+            if case_sensitive and not matched.empty:
+                rowids = list(matched["_rowid"].astype(int))
+                ph = ",".join("?" * len(rowids))
+                body_map = dict(_FTS_CONN.execute(
+                    f"SELECT rowid, body FROM speeches WHERE rowid IN ({ph})", rowids
+                ).fetchall())
+                matched["body"] = matched["_rowid"].map(body_map).fillna("")
+                cs_masks = _build_masks(matched, collect_terms(tree), case_sensitive=True)
+                matched  = matched[_eval_tree(tree, cs_masks)].drop(columns=["body"])
             _t2 = time.perf_counter()
         else:
-            # Single-chamber FTS5 path (same strategy as "both" above).
+            # Single-chamber FTS5 path
             _t1 = time.perf_counter()
-            if _FTS_CONN is not None:
-                with _SCAN_SEMAPHORE:
-                    match_sets = _fts5_search(tree)
-                corpus = _get_corpus(chamber)
-                matched = corpus[corpus["_parquet_idx"].isin(match_sets.get(chamber, frozenset()))].copy()
-                _t2 = time.perf_counter()
-                if filters:
-                    matched = _apply_filters(matched, filters)
-                if case_sensitive and not matched.empty:
-                    # Load body only for case-sensitive post-filter then discard
-                    _bs = _get_body_col(chamber)
-                    matched["body"] = _bs.loc[matched["_parquet_idx"]].values
-                    cs_masks = _build_masks(matched, collect_terms(tree), case_sensitive=True)
-                    matched  = matched[_eval_tree(tree, cs_masks)].drop(columns=["body"])
-            else:
-                # Fallback: original PyArrow full-scan path
-                terms  = collect_terms(tree)
-                body_s = _get_body_col(chamber)
-                with _SCAN_SEMAPHORE:
-                    masks  = _build_masks(pd.DataFrame({"body": body_s}), terms, case_sensitive)
-                    mask   = _eval_tree(tree, masks)
-                _t2 = time.perf_counter()
-                matched = _get_corpus(chamber)[mask].copy()
-                matched["body"] = body_s[mask].values
-                if filters:
-                    matched = _apply_filters(matched, filters)
+            with _SCAN_SEMAPHORE:
+                match_sets = _fts5_search(tree)
+            corpus = _get_corpus(chamber)
+            matched = corpus[corpus["_rowid"].isin(match_sets.get(chamber, frozenset()))].copy()
+            _t2 = time.perf_counter()
+            if filters:
+                matched = _apply_filters(matched, filters)
+            if case_sensitive and not matched.empty:
+                rowids = list(matched["_rowid"].astype(int))
+                ph = ",".join("?" * len(rowids))
+                body_map = dict(_FTS_CONN.execute(
+                    f"SELECT rowid, body FROM speeches WHERE rowid IN ({ph})", rowids
+                ).fetchall())
+                matched["body"] = matched["_rowid"].map(body_map).fillna("")
+                cs_masks = _build_masks(matched, collect_terms(tree), case_sensitive=True)
+                matched  = matched[_eval_tree(tree, cs_masks)].drop(columns=["body"])
 
         total        = len(matched)
         senate_count = int((matched["chamber"] == "senate").sum()) if "chamber" in matched.columns else 0
@@ -1531,12 +1405,17 @@ def download():
         df = _apply_filters(df, filters)
 
         if not df.empty:
-            terms  = collect_terms(tree)
-            body_s = _get_body_col(chamber).reindex(df.index).fillna("")
-            masks  = _build_masks(pd.DataFrame({"body": body_s}), terms, False)
+            terms = collect_terms(tree)
+            rowids = list(df["_rowid"].astype(int))
+            ph = ",".join("?" * len(rowids))
+            body_map = dict(_FTS_CONN.execute(
+                f"SELECT rowid, body FROM speeches WHERE rowid IN ({ph})", rowids
+            ).fetchall())
+            df = df.copy()
+            df["body"] = df["_rowid"].map(body_map).fillna("")
+            masks  = _build_masks(df[["body"]], terms, False)
             mask   = _eval_tree(tree, masks)
             matched = df[mask].copy()
-            matched["body"] = body_s[mask].values
         else:
             matched = df.copy()
             terms = collect_terms(tree)
