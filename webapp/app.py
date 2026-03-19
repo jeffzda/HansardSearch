@@ -1231,11 +1231,12 @@ def search():
     if _cache_key:
         _cache_set(_cache_key, _response_data)
 
-    return Response(_response_data, status=200, mimetype="application/json")
+    if expression:
+        _log({"event": "search", "expression": expression, "chamber": chamber,
+              "filters": filters, "total": total,
+              "senate_count": senate_count, "house_count": house_count})
 
-    _log({"event": "search", "expression": expression, "chamber": chamber,
-          "filters": filters, "total": total,
-          "senate_count": senate_count, "house_count": house_count})
+    return Response(_response_data, status=200, mimetype="application/json")
 
 
 @app.route("/api/day_context", methods=["POST"])
