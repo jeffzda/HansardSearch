@@ -968,6 +968,10 @@ def search():
     _cache_key = _search_cache_key(expression, filters, chamber, page, page_size, sort_col, sort_dir, case_sensitive)
     _cached = _cache_get(_cache_key)
     if _cached is not None:
+        if expression:
+            _log({"event": "search", "user_id": session.get("user_id"),
+                  "expression": expression, "chamber": chamber,
+                  "filters": filters, "page": page, "cache_hit": True})
         return Response(_cached, status=200, mimetype="application/json")
 
     tree = None
@@ -1247,9 +1251,12 @@ def search():
     _cache_set(_cache_key, _response_data)
 
     if expression:
-        _log({"event": "search", "expression": expression, "chamber": chamber,
+        _log({"event": "search", "user_id": session.get("user_id"),
+              "expression": expression, "chamber": chamber,
               "filters": filters, "total": total,
-              "senate_count": senate_count, "house_count": house_count})
+              "senate_count": senate_count, "house_count": house_count,
+              "page": page, "elapsed_ms": round((_t4 - _t0) * 1000),
+              "cache_hit": False})
 
     return Response(_response_data, status=200, mimetype="application/json")
 
@@ -1487,6 +1494,9 @@ def download():
             ])
 
         csv_str = out.getvalue()
+        _log({"event": "download", "user_id": session.get("user_id"),
+              "expression": expression, "chamber": chamber,
+              "filters": filters, "rows": len(matched)})
         return Response(
             csv_str,
             mimetype="text/csv",
