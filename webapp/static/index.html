@@ -2729,6 +2729,7 @@ async function doSearch(page) {
       body: JSON.stringify(payload),
       signal,
     });
+    if (r.status === 429) { showRateLimitError(10); return; }
     const data = await r.json();
     if (r.status === 401 || r.status === 403) { handle401(data); return; }
     if (!r.ok) {
@@ -4046,6 +4047,31 @@ function showError(msg) {
 
 function hideError() {
   document.getElementById("error-alert").classList.add("d-none");
+}
+
+function showRateLimitError(seconds) {
+  const searchBtn = document.getElementById("search-btn");
+  const suggestBtn = document.getElementById("suggest-btn");
+  const el = document.getElementById("error-alert");
+  if (searchBtn) searchBtn.disabled = true;
+  if (suggestBtn) suggestBtn.disabled = true;
+  let remaining = seconds;
+  const update = () => {
+    el.textContent = `Too many requests — please wait ${remaining}s before searching again.`;
+    el.classList.remove("d-none");
+  };
+  update();
+  const timer = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(timer);
+      if (searchBtn) searchBtn.disabled = false;
+      if (suggestBtn) suggestBtn.disabled = false;
+      hideError();
+    } else {
+      update();
+    }
+  }, 1000);
 }
 
 function setLoading(on) {
