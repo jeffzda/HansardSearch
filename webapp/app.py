@@ -30,12 +30,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 _THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
-# ── Search result cache (empty-expression, no-filter requests only) ────────────
+# ── Search result cache (all queries, 5-minute TTL) ─────────────────────────
 _SEARCH_CACHE: dict = {}   # md5_key -> {"expires": float, "data": bytes}
 _CACHE_TTL = 300           # seconds (5 minutes)
 
-def _search_cache_key(chamber, page, page_size, sort_col, sort_dir, case_sensitive):
-    blob = json.dumps([chamber, page, page_size, sort_col, sort_dir, case_sensitive])
+def _search_cache_key(expression, filters, chamber, page, page_size, sort_col, sort_dir, case_sensitive):
+    blob = json.dumps([expression or "", filters or {}, chamber, page, page_size,
+                       sort_col, sort_dir, case_sensitive], sort_keys=True)
     return hashlib.md5(blob.encode()).hexdigest()
 
 def _cache_get(key: str):
@@ -946,13 +947,11 @@ def search():
     sort_dir = (body.get("sort_dir") or "asc").strip()
     ascending = sort_dir != "desc"
 
-    # ── Cache hit for empty-expression, no-filter requests ─────────────────────
-    _cacheable = not expression and not filters
-    _cache_key = _search_cache_key(chamber, page, page_size, sort_col, sort_dir, case_sensitive) if _cacheable else None
-    if _cache_key:
-        _cached = _cache_get(_cache_key)
-        if _cached is not None:
-            return Response(_cached, status=200, mimetype="application/json")
+    # ── Cache hit (all queries) ─────────────────────────────────────────────────
+    _cache_key = _search_cache_key(expression, filters, chamber, page, page_size, sort_col, sort_dir, case_sensitive)
+    _cached = _cache_get(_cache_key)
+    if _cached is not None:
+        return Response(_cached, status=200, mimetype="application/json")
 
     tree = None
     if expression:
@@ -1228,8 +1227,7 @@ def search():
         "results": results,
     }, ensure_ascii=False).encode()
 
-    if _cache_key:
-        _cache_set(_cache_key, _response_data)
+    _cache_set(_cache_key, _response_data)
 
     if expression:
         _log({"event": "search", "expression": expression, "chamber": chamber,
@@ -1296,8 +1294,8 @@ def suggest_aliases():
     if not term:
         return jsonify({"error": "No term supplied"}), 400
 
-    # Cache key includes seeds so context-specific results are stored separately
-    cache_key = term.lower() + "|" + ",".join(sorted(seeds))
+    # Cache key is term-only: Haiku is called at most once per term per process lifetime
+    cache_key = term.lower()
     if cache_key in _alias_cache:
         _log({"event": "aliases", "term": term, "source": "cache", "aliases": _alias_cache[cache_key]})
         return jsonify({"aliases": _alias_cache[cache_key]})

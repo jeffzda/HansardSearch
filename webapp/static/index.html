@@ -3511,13 +3511,22 @@ function renderAliasGroup(term, aliases, groupEl) {
   const chipsEl = groupEl.querySelector(".alias-group-chips");
   chipsEl.innerHTML = "";
 
+  if (!_selectedAliases.has(term)) _selectedAliases.set(term, new Set());
+  const termSet = _selectedAliases.get(term);
+
+  // Prepend any already-selected aliases not returned by the server this render
+  const aliasSetLower = new Set(aliases.map(a => a.toLowerCase()));
+  for (const sel of termSet) {
+    if (!aliasSetLower.has(sel.toLowerCase()) && !mainTerms.has(sel.toLowerCase())) {
+      aliases.unshift(sel);
+      aliasSetLower.add(sel.toLowerCase());
+    }
+  }
+
   if (!aliases.length) {
     chipsEl.innerHTML = '<span class="small text-muted">No new suggestions.</span>';
     return;
   }
-
-  if (!_selectedAliases.has(term)) _selectedAliases.set(term, new Set());
-  const termSet = _selectedAliases.get(term);
 
   for (const alias of aliases) {
     chipsEl.appendChild(_makeChip(term, alias, termSet));
