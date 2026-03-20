@@ -59,5 +59,7 @@ ssh root@85.155.188.202 "systemctl restart hansard"
 
 ## Other
 - Full project context (corpus counts, validation results, pipeline status, known issues): `memory/MEMORY.md` — read this before starting any pipeline or data work
-- Production server: `root@85.155.188.202`, app at `/opt/hansard/`, venv at `/opt/hansard/venv/`
+- Production server: `root@85.155.188.202` — domain hansardsearch.com.au, **7.8GB RAM, NO swap**
+  - App: `/opt/hansard/webapp/` | Venv: `/opt/hansard/venv/` | FTS DB: `/opt/hansard/data/output/fts/`
+  - nginx → gunicorn on 127.0.0.1:5000 (1 worker, 4 threads, systemd `hansard.service`)
 - `data/raw/reps/` contains House XML (named `reps` for historical reasons, not `house/`)
