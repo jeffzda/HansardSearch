@@ -738,6 +738,84 @@ def help_page():
     return send_from_directory("static", "help.html")
 
 
+@app.route("/about")
+@login_required
+def about_page():
+    return send_from_directory("static", "about.html")
+
+
+@app.route("/api/analytics")
+@login_required
+def analytics():
+    from collections import defaultdict
+    events = []
+    if _LOG_PATH.exists():
+        with _LOG_PATH.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    events.append(json.loads(line))
+                except Exception:
+                    continue
+
+    searches  = [e for e in events if e.get("event") == "search"]
+    downloads = [e for e in events if e.get("event") == "download"]
+
+    total_searches   = len(searches)
+    total_downloads  = len(downloads)
+    cache_hits       = sum(1 for e in searches if e.get("cache_hit"))
+    cache_hit_pct    = round(cache_hits / total_searches * 100, 1) if total_searches else 0
+    unique_users_all = len({e["user_id"] for e in searches if e.get("user_id")})
+
+    today   = date.today()
+    days_90 = [(today - timedelta(days=i)).isoformat() for i in range(89, -1, -1)]
+    days_set = set(days_90)
+
+    daily_miss  = defaultdict(int)
+    daily_hit   = defaultdict(int)
+    daily_users = defaultdict(set)
+    daily_dl    = defaultdict(int)
+
+    for e in searches:
+        ts = e.get("ts", "")[:10]
+        if ts in days_set:
+            if e.get("cache_hit"):
+                daily_hit[ts]  += 1
+            else:
+                daily_miss[ts] += 1
+            if e.get("user_id"):
+                daily_users[ts].add(e["user_id"])
+
+    for e in downloads:
+        ts = e.get("ts", "")[:10]
+        if ts in days_set:
+            daily_dl[ts] += 1
+
+    query_counter = Counter()
+    for e in searches:
+        if not e.get("cache_hit") and e.get("expression") and e.get("ts", "")[:10] in days_set:
+            query_counter[e["expression"]] += 1
+    top_queries = [{"expression": expr, "count": cnt}
+                   for expr, cnt in query_counter.most_common(20)]
+
+    return jsonify({
+        "summary": {
+            "total_searches":    total_searches,
+            "total_downloads":   total_downloads,
+            "cache_hit_pct":     cache_hit_pct,
+            "unique_users_all":  unique_users_all,
+        },
+        "days":             days_90,
+        "daily_miss":       [daily_miss[d]          for d in days_90],
+        "daily_hit":        [daily_hit[d]           for d in days_90],
+        "daily_users":      [len(daily_users[d])    for d in days_90],
+        "daily_downloads":  [daily_dl[d]            for d in days_90],
+        "top_queries":      top_queries,
+    })
+
+
 @app.route("/login")
 def login_page():
     return send_from_directory("static", "login.html")
