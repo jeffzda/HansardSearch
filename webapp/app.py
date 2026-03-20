@@ -18,7 +18,7 @@ import time
 import hashlib
 import sqlite3
 import secrets as _secrets
-import concurrent.futures
+import threading as _cache_threading
 from collections import Counter
 from datetime import datetime, timezone, timedelta, date
 from functools import wraps
@@ -27,8 +27,6 @@ from pathlib import Path
 import pandas as pd
 from flask import Flask, request, jsonify, send_from_directory, Response, session, redirect
 from werkzeug.security import generate_password_hash, check_password_hash
-
-_THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 # ── Search result cache (all queries, 5-minute TTL) ─────────────────────────
 _SEARCH_CACHE: dict = {}   # md5_key -> {"expires": float, "data": bytes}
@@ -55,6 +53,16 @@ def _cache_set(key: str, data: bytes):
         while len(_SEARCH_CACHE) >= _CACHE_MAX_SIZE:
             del _SEARCH_CACHE[next(iter(_SEARCH_CACHE))]
     _SEARCH_CACHE[key] = {"expires": time.monotonic() + _CACHE_TTL, "data": data}
+
+def _prune_search_cache():
+    while True:
+        time.sleep(60)
+        now = time.monotonic()
+        expired = [k for k, v in list(_SEARCH_CACHE.items()) if v["expires"] <= now]
+        for k in expired:
+            _SEARCH_CACHE.pop(k, None)
+
+_cache_threading.Thread(target=_prune_search_cache, daemon=True, name="cache-pruner").start()
 
 # ── Activity log ───────────────────────────────────────────────────────────────
 _LOG_PATH = Path(__file__).parent / "activity_log.jsonl"
