@@ -33,6 +33,7 @@ _THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 # ── Search result cache (all queries, 5-minute TTL) ─────────────────────────
 _SEARCH_CACHE: dict = {}   # md5_key -> {"expires": float, "data": bytes}
 _CACHE_TTL = 300           # seconds (5 minutes)
+_CACHE_MAX_SIZE = 500      # max entries; evict expired then oldest on overflow
 
 def _search_cache_key(expression, filters, chamber, page, page_size, sort_col, sort_dir, case_sensitive):
     blob = json.dumps([expression or "", filters or {}, chamber, page, page_size,
@@ -46,6 +47,13 @@ def _cache_get(key: str):
     return None
 
 def _cache_set(key: str, data: bytes):
+    if len(_SEARCH_CACHE) >= _CACHE_MAX_SIZE:
+        now = time.monotonic()
+        expired = [k for k, v in _SEARCH_CACHE.items() if v["expires"] <= now]
+        for k in expired:
+            del _SEARCH_CACHE[k]
+        while len(_SEARCH_CACHE) >= _CACHE_MAX_SIZE:
+            del _SEARCH_CACHE[next(iter(_SEARCH_CACHE))]
     _SEARCH_CACHE[key] = {"expires": time.monotonic() + _CACHE_TTL, "data": data}
 
 # ── Activity log ───────────────────────────────────────────────────────────────
@@ -71,6 +79,7 @@ from search_corpus import (
 )
 
 app = Flask(__name__, static_folder="static")
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # 16 KB — more than enough for any search request
 
 
 @app.errorhandler(Exception)
@@ -1282,6 +1291,7 @@ def day_context():
 
 
 _alias_cache: dict = {}  # cache_key -> list[str]
+_ALIAS_CACHE_MAX = 200   # evict oldest entry on overflow
 
 
 @app.route("/api/suggest_aliases", methods=["POST"])
@@ -1371,6 +1381,8 @@ def suggest_aliases():
         clean.append(a)
         if len(clean) >= 8:
             break
+    if len(_alias_cache) >= _ALIAS_CACHE_MAX:
+        del _alias_cache[next(iter(_alias_cache))]
     _alias_cache[cache_key] = clean
     _log({"event": "aliases", "term": term, "source": "haiku", "aliases": clean})
     return jsonify({"aliases": clean})
@@ -1413,27 +1425,28 @@ def download():
 
         df = _apply_filters(df, filters)
 
-        if not df.empty:
-            terms = collect_terms(tree)
-            rowids = list(df["_rowid"].astype(int))
-            ph = ",".join("?" * len(rowids))
-            body_map = dict(_FTS_CONN.execute(
-                f"SELECT rowid, body FROM speeches WHERE rowid IN ({ph})", rowids
-            ).fetchall())
-            df = df.copy()
-            df["body"] = df["_rowid"].map(body_map).fillna("")
-            masks  = _build_masks(df[["body"]], terms, False)
-            mask   = _eval_tree(tree, masks)
-            matched = df[mask].copy()
-        else:
-            matched = df.copy()
-            terms = collect_terms(tree)
+        with _SCAN_SEMAPHORE:
+            if not df.empty:
+                terms = collect_terms(tree)
+                rowids = list(df["_rowid"].astype(int))
+                ph = ",".join("?" * len(rowids))
+                body_map = dict(_FTS_CONN.execute(
+                    f"SELECT rowid, body FROM speeches WHERE rowid IN ({ph})", rowids
+                ).fetchall())
+                df = df.copy()
+                df["body"] = df["_rowid"].map(body_map).fillna("")
+                masks  = _build_masks(df[["body"]], terms, False)
+                mask   = _eval_tree(tree, masks)
+                matched = df[mask].copy()
+            else:
+                matched = df.copy()
+                terms = collect_terms(tree)
 
         sort_cols = [c for c in ["date", "order"] if c in matched.columns]
         if sort_cols:
             matched = matched.sort_values(sort_cols)
 
-        matched = matched.head(10)
+        matched = matched.head(100)
 
         out = io.StringIO()
         writer = csv.writer(out)
