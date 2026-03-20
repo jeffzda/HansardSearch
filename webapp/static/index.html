@@ -3250,11 +3250,15 @@ async function loadSuggestTerms() {
 }
 
 async function suggestSearch() {
+  const btn = document.getElementById("suggest-btn");
+  if (btn) btn.disabled = true;
   const terms = await loadSuggestTerms();
-  if (!terms.length) return;
-  const term = terms[Math.floor(Math.random() * terms.length)];
-  document.getElementById("expr-input").value = term;
-  doSearch(1);
+  if (terms.length) {
+    const term = terms[Math.floor(Math.random() * terms.length)];
+    document.getElementById("expr-input").value = term;
+    doSearch(1);
+  }
+  if (btn) setTimeout(() => { btn.disabled = false; }, 500);
 }
 
 function clearSearch() {
