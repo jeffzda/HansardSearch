@@ -96,6 +96,10 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+# Import boolean expression parser from search_corpus (same logic as webapp)
+sys.path.insert(0, str(Path(__file__).parent))
+from search_corpus import parse_expression, _ast_to_fts5  # noqa: E402
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -424,6 +428,27 @@ def extract_stage_direction_topics(
 
 # ── Phase 5: Historical search (FTS5 indexed) ────────────────────────────────
 
+def _normalise_phrase(phrase: str) -> str:
+    """Auto-quote unquoted multi-word terms around boolean operators.
+
+    Converts e.g. "mental health & addiction" → "'mental health' & 'addiction'"
+    so that parse_expression can handle it correctly.
+    """
+    if not any(op in phrase for op in ('&', '|', '~')):
+        return phrase
+    parts = re.split(r'(\s*[&|~]\s*)', phrase)
+    out = []
+    for part in parts:
+        stripped = part.strip()
+        if stripped in ('&', '|', '~'):
+            out.append(f' {stripped} ')
+        elif stripped and not stripped.startswith(("'", '"')):
+            out.append(f"'{stripped}'" if ' ' in stripped else stripped)
+        else:
+            out.append(part)
+    return ''.join(out).strip()
+
+
 def search_phrase_in_fts(
     conn: sqlite3.Connection,
     phrase: str,
@@ -434,9 +459,14 @@ def search_phrase_in_fts(
     chamber_key: 'senate', 'house', or None (both chambers for joint phrases).
     FTS5 phrase search is case-insensitive by default.
     """
-    # Build FTS5 quoted-phrase query; escape any embedded double-quotes
-    escaped = phrase.replace('"', '""')
-    fts5_query = f'"{escaped}"'
+    # Build FTS5 query using the same boolean expression parser as the webapp.
+    normalised = _normalise_phrase(phrase)
+    try:
+        ast = parse_expression(normalised)
+        fts5_query = _ast_to_fts5(ast)
+    except Exception:
+        # Fallback: treat as a literal phrase
+        fts5_query = f'"{phrase.replace(chr(34), chr(34)*2)}"'
 
     rowids = [
         r[0] for r in conn.execute(
@@ -551,10 +581,41 @@ def detect_spikes(matches_df: pd.DataFrame) -> list[dict]:
 
 
 def _phrase_density(body: str, phrase: str) -> float:
-    """Phrase occurrences per 1000 tokens (approximate)."""
+    """Phrase occurrences per 1000 tokens (approximate).
+
+    For boolean expressions (containing & | ~), counts occurrences of the
+    first quoted/bare term as a proxy for density.
+    """
     tokens = max(len(body.split()), 1)
-    count  = body.lower().count(phrase.lower())
+    # Use the first simple term for density scoring
+    simple = re.split(r'[&|~]', phrase)[0].strip().strip("'\"")
+    count  = body.lower().count(simple.lower())
     return count * 1000 / tokens
+
+
+def _df_matches_phrase(df: pd.DataFrame, phrase: str) -> pd.DataFrame:
+    """Filter a DataFrame to rows whose body matches the phrase expression.
+
+    Handles boolean expressions (&, |, ~) and simple literals.
+    Returns a filtered copy.
+    """
+    from search_corpus import parse_expression, _build_masks, _eval_tree  # noqa
+
+    if df.empty:
+        return df
+
+    bodies = df["body"].fillna("").astype(str)
+
+    try:
+        normalised = _normalise_phrase(phrase)
+        ast = parse_expression(normalised)
+        mask = _eval_tree(ast, bodies)
+        return df[mask].copy()
+    except Exception:
+        # Fallback: simple case-insensitive substring match on first term
+        simple = re.split(r'[&|~]', phrase)[0].strip().strip("'\"")
+        pat = re.compile(re.escape(simple), re.IGNORECASE)
+        return df[bodies.str.contains(pat, na=False)].copy()
 
 
 MAX_BODIES_FOR_CLAUDE = 500   # cap regardless of token budget
@@ -1980,8 +2041,7 @@ def main() -> None:
         if args.phrase:
             # Manual phrase — skip topic extraction and Haiku selection entirely
             chosen = args.phrase.strip()
-            phrase_pat = re.compile(re.escape(chosen), re.IGNORECASE)
-            week_turns = week_df[week_df["body"].str.contains(phrase_pat, na=False)].copy()
+            week_turns = _df_matches_phrase(week_df, chosen)
             week_count = len(week_turns)
             del week_df
             print(f"  Manual phrase: '{chosen}' ({week_count} matching turns this week)", flush=True)
@@ -2007,8 +2067,7 @@ def main() -> None:
                     week_count = next((c for t, c in top_topics if t == chosen), top_topics[0][1])
                     print(f"  Haiku selected: '{chosen}'", flush=True)
 
-                phrase_pat = re.compile(re.escape(chosen), re.IGNORECASE)
-                week_turns = week_df[week_df["body"].str.contains(phrase_pat, na=False)].copy()
+                week_turns = _df_matches_phrase(week_df, chosen)
                 del week_df
 
         if chosen:
