@@ -849,7 +849,9 @@ def chart_year_trend(matches_df: pd.DataFrame, phrase: str, chamber_label: str) 
         labelcolor=_TICK, handlelength=1.2, handleheight=0.9,
     )
 
-    fig.tight_layout(pad=0.4)
+    ax.set_ylabel("Mentions", color=_TICK, fontsize=9, labelpad=6)
+
+    fig.tight_layout(pad=0.6)
     return fig_to_b64(fig)
 
 
@@ -2015,6 +2017,10 @@ def _phrase_block_html(pr: PhraseResult, citations_on: bool) -> str:
             f'</div>'
         )
 
+    chart_year_tag  = (
+        f'<img src="data:image/png;base64,{pr.chart_year_b64}" alt="Year trend"'
+        f' style="width:100%;border-radius:4px;border:1px solid #3c3836;display:block;margin:16px 0 0">'
+    ) if pr.chart_year_b64 else ""
     chart_party_tag = f'<img src="data:image/png;base64,{pr.chart_party_b64}" alt="Party breakdown">' if pr.chart_party_b64 else ""
     chart_gov_tag   = f'<img src="data:image/png;base64,{pr.chart_gov_b64}" alt="Gov/Opp">'    if pr.chart_gov_b64   else ""
 
@@ -2037,6 +2043,7 @@ def _phrase_block_html(pr: PhraseResult, citations_on: bool) -> str:
         f'<span>Chamber: <strong style="color:#83a598">{pr.chamber}</strong></span>'
         f'<span>Analysed: {pr.n_bodies_sent} speech turns</span>'
         f'</div>'
+        f'{chart_year_tag}'
         f'{spike_callout}'
         f'<div class="narrative">{pr.narrative_html}</div>'
         f'<div class="chart-pair">{chart_party_tag}{chart_gov_tag}</div>'
@@ -2069,11 +2076,6 @@ def build_newsletter_html(
     )
 
     phrase_display = result.phrase.title() if result.phrase else ""
-    header_chart_html = (
-        f'<div class="header-chart">'
-        f'<img src="data:image/png;base64,{result.chart_year_b64}" alt="Year trend for {result.phrase}">'
-        f'</div>'
-    ) if result.chart_year_b64 else ""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -2089,7 +2091,6 @@ def build_newsletter_html(
   <div style="font-size:18px;color:#ebdbb2;margin-top:6px;">Topic: <em style="color:#fabd2f">{phrase_display}</em></div>
   <div class="meta">Sitting Week {week_label} &nbsp;·&nbsp; Issue {issue_n} &nbsp;·&nbsp; Generated {generated_at}</div>
 </header>
-{header_chart_html}
 <div class="container">
   {stats_html}
   <div class="sitting-days">
