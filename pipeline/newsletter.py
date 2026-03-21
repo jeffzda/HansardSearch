@@ -643,19 +643,20 @@ def select_bodies_for_claude(
         return []
 
     def row_to_dict(row, is_spike: bool = False) -> dict:
-        ch   = str(getattr(row, "chamber", ""))
-        dt   = str(getattr(row, "date", ""))
-        nid  = str(getattr(row, "name_id", ""))
-        body = str(getattr(row, "body", ""))
+        ch       = str(getattr(row, "chamber", ""))
+        dt       = str(getattr(row, "date", ""))
+        nid      = str(getattr(row, "name_id", ""))
+        body_raw = str(getattr(row, "body", ""))
+        body_out = _excerpt_around_matches(body_raw, phrase)
         return {
             "date":          dt,
             "speaker":       str(getattr(row, "name", "")),
             "party":         str(getattr(row, "party", "")),
             "chamber":       ch,
             "in_gov":        int(getattr(row, "in_gov", 0) or 0),
-            "body":          body,
+            "body":          body_out,
             "is_spike_year": is_spike,
-            "turn_hash":     _turn_hash(ch, dt, nid, body),
+            "turn_hash":     _turn_hash(ch, dt, nid, body_raw),
         }
 
     spike_years = {s["year"] for s in detect_spikes(matches_df)}
@@ -953,7 +954,10 @@ def build_top_speakers_table(matches_df: pd.DataFrame, top_n: int = 5) -> str:
     )
 
 
-def select_week_turns_for_context(week_turns_df: pd.DataFrame) -> list[dict]:
+def select_week_turns_for_context(
+    week_turns_df: pd.DataFrame,
+    phrase: str = "",
+) -> list[dict]:
     """Return all week turns sorted by date for narrative/citation context."""
     if week_turns_df is None or week_turns_df.empty:
         return []
@@ -963,18 +967,19 @@ def select_week_turns_for_context(week_turns_df: pd.DataFrame) -> list[dict]:
     df = df.sort_values("date")
     result = []
     for r in df.to_dict("records"):
-        ch   = r.get("chamber", "parliament")
-        dt   = str(r.get("date", ""))
-        nid  = str(r.get("name_id", ""))
-        body = str(r.get("body", ""))
+        ch       = r.get("chamber", "parliament")
+        dt       = str(r.get("date", ""))
+        nid      = str(r.get("name_id", ""))
+        body_raw = str(r.get("body", ""))
+        body_out = _excerpt_around_matches(body_raw, phrase) if phrase else body_raw
         result.append({
             "name":      r.get("name", "Unknown"),
             "speaker":   r.get("name", "Unknown"),
             "party":     r.get("party", ""),
             "date":      dt,
             "chamber":   ch,
-            "body":      body,
-            "turn_hash": _turn_hash(ch, dt, nid, body),
+            "body":      body_out,
+            "turn_hash": _turn_hash(ch, dt, nid, body_raw),
         })
     return result
 
@@ -1351,6 +1356,63 @@ def _turn_hash(chamber: str, date: str, name_id: str, body: str) -> str:
     """Stable 12-char hex identifier for a specific speech turn."""
     raw = f"{chamber}|{date}|{name_id}|{body[:200]}"
     return hashlib.sha256(raw.encode()).hexdigest()[:12]
+
+
+def _excerpt_around_matches(
+    body: str,
+    phrase: str,
+    window: int = 400,
+    head_tail: int = 400,
+) -> str:
+    """Return an excerpt of `body` preserving context around matched phrase terms.
+
+    Keeps the first/last `head_tail` chars and a ±`window` char window around
+    every match. Overlapping windows are merged. Non-adjacent sections are joined
+    with ' […] '. Returns the full body unchanged if windows cover it entirely.
+    The turn hash must always be computed from the original body, not the excerpt.
+    """
+    raw_terms = re.split(r'[&|~]', phrase)
+    terms = [t.strip().strip("'\"").strip() for t in raw_terms if t.strip().strip("'\"").strip()]
+    if not terms:
+        return body
+
+    body_lower = body.lower()
+
+    positions: list[tuple[int, int]] = []
+    for term in terms:
+        term_lower = term.lower()
+        if not term_lower:
+            continue
+        start = 0
+        while True:
+            pos = body_lower.find(term_lower, start)
+            if pos == -1:
+                break
+            positions.append((pos, pos + len(term)))
+            start = pos + 1
+
+    if not positions:
+        return body
+
+    spans: list[tuple[int, int]] = [
+        (0, min(head_tail, len(body))),
+        *[(max(0, s - window), min(len(body), e + window)) for s, e in positions],
+        (max(0, len(body) - head_tail), len(body)),
+    ]
+    spans.sort()
+
+    merged: list[list[int]] = []
+    for s, e in spans:
+        if merged and s <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], e)
+        else:
+            merged.append([s, e])
+
+    # All spans merged into one contiguous range — nothing to cut
+    if len(merged) == 1:
+        return body
+
+    return " […] ".join(body[s:e] for s, e in merged)
 
 
 def _turn_url(turn_hash: str) -> str:
@@ -1878,7 +1940,7 @@ def _process_chamber_phrase(
     first_men   = get_first_mention(matches_df, phrase)
 
     # Pre-select week turns once — used consistently by narrative, citation pass, and renderer
-    week_bodies = select_week_turns_for_context(week_turns) if week_turns is not None else []
+    week_bodies = select_week_turns_for_context(week_turns, phrase=phrase) if week_turns is not None else []
     if week_bodies:
         print(f"    → {len(week_bodies)} week turns selected ({week_count} matching this week)", flush=True)
 
