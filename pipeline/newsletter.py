@@ -618,13 +618,14 @@ def _df_matches_phrase(df: pd.DataFrame, phrase: str) -> pd.DataFrame:
         return df[bodies.str.contains(pat, na=False)].copy()
 
 
-MAX_BODIES_FOR_CLAUDE = 500   # cap regardless of token budget
+MAX_BODIES_FOR_CLAUDE = 500   # default cap regardless of token budget
 
 
 def select_bodies_for_claude(
     matches_df: pd.DataFrame,
     phrase: str,
     token_budget: int = EXCERPT_TOKEN_BUDGET,
+    max_turns: int = MAX_BODIES_FOR_CLAUDE,
 ) -> list[dict]:
     """Select speech body texts to send to Claude within the token budget.
 
@@ -656,7 +657,7 @@ def select_bodies_for_claude(
     # Estimate total tokens
     total_tokens = sum(len(str(r.body)) // 4 for r in matches_df.itertuples())
 
-    if total_tokens <= token_budget and len(matches_df) <= MAX_BODIES_FOR_CLAUDE:
+    if total_tokens <= token_budget and len(matches_df) <= max_turns:
         # Case A — send everything
         rows = sorted(
             [row_to_dict(row, int(getattr(row, "year", 0) or 0) in spike_years)
@@ -667,7 +668,7 @@ def select_bodies_for_claude(
 
     # Case B — proportional + speaker-stratified selection
     avg_tokens  = total_tokens / max(len(matches_df), 1)
-    total_fits  = min(int(token_budget / max(avg_tokens, 1)), MAX_BODIES_FOR_CLAUDE)
+    total_fits  = min(int(token_budget / max(avg_tokens, 1)), max_turns)
 
     year_counts = matches_df["year"].value_counts().sort_index()
     total_count = len(matches_df)
@@ -1824,7 +1825,7 @@ def _process_chamber_phrase(
     print(f"    → {len(matches_df):,} historical matches")
     spikes      = detect_spikes(matches_df)
     spike_years = [s["year"] for s in spikes]
-    bodies      = select_bodies_for_claude(matches_df, phrase)
+    bodies      = select_bodies_for_claude(matches_df, phrase, max_turns=args.max_turns)
     first_men   = get_first_mention(matches_df, phrase)
 
     # Pre-select week turns once — used consistently by narrative, citation pass, and renderer
@@ -1951,6 +1952,8 @@ def main() -> None:
                     help="Allow phrases already used in prior issues of this week (useful when the pool is exhausted).")
     ap.add_argument("--phrase",        default=None,
                     help="Manually specify the search phrase; skips stage direction extraction and Haiku selection.")
+    ap.add_argument("--max-turns",     type=int, default=MAX_BODIES_FOR_CLAUDE,
+                    help=f"Maximum historical speech turns passed to Claude (default: {MAX_BODIES_FOR_CLAUDE}).")
     args = ap.parse_args()
 
     args.citations    = not args.no_citations
