@@ -66,7 +66,7 @@ python pipeline/newsletter.py --week 2026-W10   # explicit week
 python pipeline/newsletter.py --dry-run          # no API calls, placeholder narratives
 python pipeline/newsletter.py --phrases 5 --min-count 3 --no-citations
 
-# Deploy to production server
+# Deploy to production server — do NOT deploy unless explicitly asked
 rsync -av webapp/app.py root@85.155.188.202:/opt/hansard/webapp/app.py
 rsync -av webapp/static/ root@85.155.188.202:/opt/hansard/webapp/static/
 ssh root@85.155.188.202 "systemctl restart hansard"
@@ -118,6 +118,10 @@ ssh root@85.155.188.202 "systemctl restart hansard"
 - Branch: `main`
 - Remote: https://github.com/jeffzda/HansardSearch.git
 - Commit after every change with a descriptive message; stage specific files by name
+
+## Development workflow
+- **Work on local server only** (`http://localhost:5000`) unless explicitly asked to deploy
+- Test all changes locally before any production deploy
 
 ## Production server
 - `root@85.155.188.202` — domain hansardsearch.com.au, **7.8GB RAM, NO swap**
