@@ -353,7 +353,7 @@ async function loadFeedback() {
     if (Array.isArray(fb)) return fb.map(k => escHtml(LABELS[k] || k)).join(', ');
     return escHtml(String(fb));
   }
-  let html = '<table class="query-table"><thead><tr><th>Time</th><th>Turn</th><th>Feedback</th></tr></thead><tbody>';
+  let html = '<table class="query-table"><thead><tr><th>Time</th><th>Newsletter</th><th>#</th><th>Turn</th><th>Feedback</th></tr></thead><tbody>';
   for (const e of data) {
     const ts = e.ts ? new Date(e.ts).toLocaleString('en-AU', {dateStyle:'short', timeStyle:'short'}) : '';
     const hash = e.turn_hash || '';
@@ -361,7 +361,15 @@ async function loadFeedback() {
     const turnCell = url
       ? `<a href="${escHtml(url)}" target="_blank" rel="noopener" style="font-family:monospace;font-size:0.8rem">${escHtml(hash || url)}</a>`
       : escHtml(hash);
-    html += `<tr><td style="white-space:nowrap;color:var(--tn-comment);font-size:0.8rem">${escHtml(ts)}</td><td>${turnCell}</td><td>${fmtFeedback(e.feedback)}</td></tr>`;
+    const nl = e.newsletter || '';
+    const cnum = e.citation_num || '';
+    html += `<tr>
+      <td style="white-space:nowrap;color:var(--tn-comment);font-size:0.8rem">${escHtml(ts)}</td>
+      <td style="font-size:0.8rem;color:var(--tn-fg-dim)">${escHtml(nl)}</td>
+      <td style="font-family:monospace;color:var(--tn-comment);text-align:center">${escHtml(cnum)}</td>
+      <td>${turnCell}</td>
+      <td>${fmtFeedback(e.feedback)}</td>
+    </tr>`;
   }
   html += '</tbody></table>';
   wrap.innerHTML = html;

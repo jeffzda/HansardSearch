@@ -1511,6 +1511,8 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
   var hideTimer=null;
   var _cache={};
   var currentUrl='';
+  var currentCitationNum='';
+  var newsletterSource=document.title||'';
 
   function posFromEl(sup){
     var r=sup.getBoundingClientRect();
@@ -1542,7 +1544,13 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
       await fetch('https://hansardsearch.com.au/api/citation-feedback',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({turn_hash:hash,turn_url:currentUrl,feedback:feedback})
+        body:JSON.stringify({
+          turn_hash:hash,
+          turn_url:currentUrl,
+          citation_num:currentCitationNum,
+          newsletter:newsletterSource,
+          feedback:feedback
+        })
       });
     }catch(e){}
   }
@@ -1577,6 +1585,7 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
     var link=refEl.querySelector('a[href*="/t/"]');
     var url=link?link.href:null;
     currentUrl=url||'';
+    currentCitationNum=a.getAttribute('href').replace(/^#cite-/,'');
     var speaker=(refEl.querySelector('.citation-speaker')||{}).textContent||'';
     var meta=refEl.textContent.replace(speaker,'').replace(/\[Hansard[^\]]*]/g,'').replace(/\s+/g,' ').trim().replace(/,\s*$/,'');
     spkEl.textContent=speaker;

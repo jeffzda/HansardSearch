@@ -827,6 +827,8 @@ def citation_feedback():
     data = request.get_json(force=True, silent=True) or {}
     entry = {
         "ts": datetime.now(timezone.utc).isoformat(),
+        "newsletter": data.get("newsletter", ""),
+        "citation_num": data.get("citation_num", ""),
         "turn_hash": data.get("turn_hash", ""),
         "turn_url": data.get("turn_url", ""),
         "feedback": data.get("feedback", ""),
