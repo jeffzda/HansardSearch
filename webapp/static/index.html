@@ -453,6 +453,16 @@
     .chart-legend-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
     #chart-container.d-none { display: none !important; }
 
+    /* ── Trend insight ─────────────────────────────────────────────────────── */
+    #trend-insight { margin-top: 5px; margin-bottom: 6px; font-size: 0.78rem; color: #a89984; line-height: 1.5; }
+    #trend-insight .ti-summary { margin-bottom: 4px; }
+    #trend-insight .ti-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .ti-tag {
+      display: inline-block; padding: 1px 7px; border-radius: 10px;
+      border: 1px solid #504945; background: transparent;
+      color: #928374; font-size: 0.7rem; white-space: nowrap;
+    }
+
     /* ── Maps ──────────────────────────────────────────────────────────────── */
     /* MAPS (disabled): choropleth map styles — re-enable when maps are restored
     #maps-container { margin-bottom: 12px; }
@@ -925,7 +935,6 @@
   <div id="header-controls" style="display:flex;align-items:center;gap:12px;margin-left:auto;flex-shrink:0;">
     <button id="theme-toggle" onclick="toggleTheme()" class="small" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75" title="Toggle light/dark mode"></button>
     <a href="/help" class="small" style="color:var(--tn-comment);text-decoration:none;opacity:0.75" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Help</a>
-    <a href="/about" class="small" style="color:var(--tn-comment);text-decoration:none;opacity:0.75" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">About</a>
   </div>
 </div>
 
@@ -952,6 +961,9 @@
         </div>
         <canvas id="timeseries-chart"></canvas>
       </div>
+
+      <!-- Trend insight -->
+      <div id="trend-insight" class="d-none"></div>
 
       <!-- MAPS (disabled): two choropleth maps below the chart showing Senate results
            by state and House results by electorate. GeoJSON files:
@@ -1506,15 +1518,6 @@ function restoreStateFromUrl() {
   if (p.get("sc")) _sortCol = p.get("sc");
   if (p.get("sd")) _sortDir = p.get("sd");
 
-  const drs = p.getAll("dr");
-  if (drs.length) {
-    document.querySelectorAll(".date-range-row").forEach(r => r.remove());
-    drs.forEach(dr => {
-      const [from, to] = dr.split(",");
-      addDateRange(from || "", to || "");
-    });
-  }
-
   if (p.get("gender")) {
     const el = document.querySelector(`input[name="f-gender"][value="${p.get("gender")}"]`);
     if (el) el.checked = true;
@@ -1545,6 +1548,16 @@ function _findMpStateDiv(geo) {
 
 function restoreDynamicFilters(p) {
   if (!p) return;
+
+  // Date ranges — restored here (after loadMetadata) so setDateRanges() doesn't overwrite them
+  const drs = p.getAll("dr");
+  if (drs.length) {
+    document.querySelectorAll(".date-range-row").forEach(r => r.remove());
+    drs.forEach(dr => {
+      const [from, to] = dr.split(",");
+      addDateRange(from || "", to || "");
+    });
+  }
 
   // Full party groups
   p.getAll('pgrp').forEach(gid => {
@@ -2850,6 +2863,8 @@ function renderResults(data) {
   if (data.total === 0) {
     statsEl.textContent = "No matches found.";
     document.getElementById("no-results").classList.remove("d-none");
+    const tiEl = document.getElementById("trend-insight");
+    if (tiEl) tiEl.classList.add("d-none");
   } else {
     const totalFmt = data.total.toLocaleString();
     const senFmt   = data.senate_count.toLocaleString();
@@ -3747,6 +3762,220 @@ function renderChart(data) {
     { label: "Senate", data: senData, backgroundColor: "rgba(158,61,31,0.75)",  borderColor: "rgba(158,61,31,1)",  borderWidth: 1 },
   ];
   _chart.update('none');
+  renderTrendInsight(senData, houData, axisYears);
+}
+
+// ── Trend heuristics ─────────────────────────────────────────────────────────
+
+// Groups years into distinct activity episodes for bimodal/multimodal detection.
+// A year is "active" if its count >= max(2, 15% of overall peak).
+// Single-year dips within an episode are bridged; episodes separated by <2-year
+// gaps are merged. Returns [{startYear, endYear, peakYear, peakCount}, ...].
+function findEpisodes(perYear, axisYears, peakCount) {
+  const n = axisYears.length;
+  const threshold = Math.max(2, 0.15 * peakCount);
+  const active = perYear.map(v => v >= threshold);
+
+  // Bridge single-year gaps
+  const bridged = [...active];
+  for (let i = 1; i < n - 1; i++) {
+    if (!bridged[i] && bridged[i - 1] && bridged[i + 1]) bridged[i] = true;
+  }
+
+  // Find contiguous runs
+  const raw = [];
+  let i = 0;
+  while (i < n) {
+    if (!bridged[i]) { i++; continue; }
+    const start = i;
+    while (i < n && bridged[i]) i++;
+    const end = i - 1;
+    const epCounts = perYear.slice(start, end + 1);
+    const epPeak   = Math.max(...epCounts);
+    const epOff    = epCounts.indexOf(epPeak);
+    raw.push({ startYear: parseInt(axisYears[start]), endYear: parseInt(axisYears[end]),
+               peakYear: parseInt(axisYears[start + epOff]), peakCount: epPeak });
+  }
+
+  // Merge episodes separated by only 1 year (too close to call distinct)
+  const merged = [];
+  for (const ep of raw) {
+    if (!merged.length) { merged.push(ep); continue; }
+    const prev = merged[merged.length - 1];
+    if (ep.startYear - prev.endYear <= 2) {
+      prev.endYear = ep.endYear;
+      if (ep.peakCount > prev.peakCount) { prev.peakYear = ep.peakYear; prev.peakCount = ep.peakCount; }
+    } else {
+      merged.push(ep);
+    }
+  }
+  return merged;
+}
+
+function analyzeTrend(senData, houData, axisYears) {
+  const n = axisYears.length;
+  const perYear = axisYears.map((_, i) => (senData[i] || 0) + (houData[i] || 0));
+  const senTotal = senData.reduce((a, b) => a + b, 0);
+  const houTotal = houData.reduce((a, b) => a + b, 0);
+  const total = senTotal + houTotal;
+  if (total === 0) return { summary: "", tags: [] };
+
+  const currentYear = new Date().getFullYear();
+
+  // Active years
+  const activeYears = axisYears.filter((_, i) => perYear[i] >= 1);
+  const firstMeaningful = axisYears.find((_, i) => perYear[i] >= 3) || activeYears[0];
+  const firstActive = firstMeaningful ? parseInt(firstMeaningful) : parseInt(axisYears[0]);
+  const lastActive = parseInt(activeYears[activeYears.length - 1] || axisYears[n - 1]);
+  const activeSpan = lastActive - firstActive;
+
+  // Peak
+  let peakIdx = 0;
+  perYear.forEach((v, i) => { if (v > perYear[peakIdx]) peakIdx = i; });
+  const peakYear = parseInt(axisYears[peakIdx]);
+  const peakCount = perYear[peakIdx];
+
+  // Sorted top-2 for spike detection
+  const sorted = [...perYear].sort((a, b) => b - a);
+  const topTwoShare = total > 0 ? (sorted[0] + (sorted[1] || 0)) / total : 0;
+
+  // Overall average (excluding incomplete current year)
+  const completePerYear = perYear.filter((_, i) => parseInt(axisYears[i]) < currentYear);
+  const overallAvg = completePerYear.length > 0
+    ? completePerYear.reduce((a, b) => a + b, 0) / completePerYear.length : 0;
+
+  // Recent avg: last 5 completed years
+  const recentYears = axisYears
+    .map((y, i) => ({ y: parseInt(y), v: perYear[i] }))
+    .filter(d => d.y >= currentYear - 5 && d.y < currentYear);
+  const recentAvg = recentYears.length > 0
+    ? recentYears.reduce((a, d) => a + d.v, 0) / recentYears.length : 0;
+
+  // Early avg: first 5 active years
+  const earlyIdx = axisYears
+    .map((y, i) => parseInt(y) >= firstActive ? i : -1)
+    .filter(i => i >= 0)
+    .slice(0, 5);
+  const earlyAvg = earlyIdx.length > 0
+    ? earlyIdx.reduce((a, i) => a + perYear[i], 0) / earlyIdx.length : 0;
+
+  // Linear slope over full active period (simple least-squares)
+  const activeIdxList = axisYears
+    .map((y, i) => parseInt(y) >= firstActive && parseInt(y) < currentYear ? i : -1)
+    .filter(i => i >= 0);
+  let slope = 0;
+  if (activeIdxList.length >= 4) {
+    const xs = activeIdxList.map(i => parseInt(axisYears[i]) - firstActive);
+    const ys = activeIdxList.map(i => perYear[i]);
+    const xMean = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const yMean = ys.reduce((a, b) => a + b, 0) / ys.length;
+    const num = xs.reduce((a, x, k) => a + (x - xMean) * (ys[k] - yMean), 0);
+    const den = xs.reduce((a, x) => a + (x - xMean) ** 2, 0);
+    slope = den > 0 ? num / den : 0;
+  }
+
+  // Episode / multimodal detection
+  const episodes = findEpisodes(perYear, axisYears, peakCount);
+  // Both peaks must be at least 25% as large as the other (neither is trivial noise)
+  const BIMODAL    = episodes.length === 2 &&
+                     episodes[1].peakCount >= 0.25 * episodes[0].peakCount &&
+                     episodes[0].peakCount >= 0.25 * episodes[1].peakCount;
+  const MULTIMODAL = episodes.length >= 3 &&
+                     episodes[episodes.length - 1].peakCount >= 0.2 * peakCount;
+
+  // ── Tag rules ──────────────────────────────────────────────────────────────
+  const tags = [];
+
+  // Average of first 6 corpus years — used to detect topics absent from early corpus
+  const corpusEarlyAvg = axisYears.slice(0, 6).reduce((a, _, i) => a + perYear[i], 0) / 6;
+
+  // bulkStart: first year where annual count reaches 25% of overall average.
+  // Unlike firstActive (≥3 matches), this ignores sparse early traces and finds
+  // when the topic actually gained real traction. For topics with genuine zero
+  // early activity, bulkStart ≈ firstActive; for topics with scattered trace
+  // mentions before a real rise, bulkStart jumps to the takeoff point.
+  const bulkThreshold = Math.max(3, Math.round(overallAvg * 0.25));
+  const bulkStartYear = axisYears.find((_, i) => perYear[i] >= bulkThreshold);
+  const bulkStart     = bulkStartYear ? parseInt(bulkStartYear) : firstActive;
+  const LOW_VOLUME    = total < 25;
+  // LATE_EMERGE: bulk of activity started 5+ years into the corpus AND the early
+  // corpus was quiet (< 15% of the topic's eventual average).
+  const LATE_EMERGE   = bulkStart >= parseInt(axisYears[0]) + 5
+                        && corpusEarlyAvg < 0.15 * overallAvg
+                        && activeSpan >= 4;
+  const EVENT_SPIKE   = topTwoShare >= 0.55 && peakCount >= 10;
+  const RECENT_SURGE  = recentAvg >= 2 * overallAvg + 0.1 && recentAvg >= 5;
+  // DECLINING: either faded from an early high, OR post-spike decay back toward baseline
+  const postSpikeDecay = peakCount >= 8 && recentAvg <= 0.3 * peakCount;
+  const DECLINING     = peakYear <= currentYear - 4 && !RECENT_SURGE &&
+                        ((earlyAvg > 1 && recentAvg <= 0.4 * earlyAvg) || postSpikeDecay);
+  // LONG_GROWTH: requires positive slope AND second half of active span genuinely
+  //   higher than first half. Without the split-period check, a barely-positive slope
+  //   from a recent spike can misfire as "grown steadily" on a flat/declining series.
+  const spikeDominated = peakCount >= 8 && topTwoShare >= 0.4 && recentAvg <= 0.5 * peakCount;
+  const splitMid = Math.floor((firstActive + lastActive) / 2);
+  const firstHalfPts  = axisYears.map((y,i) => ({y:parseInt(y), v:perYear[i]}))
+                          .filter(d => d.y >= firstActive && d.y < splitMid && d.y < currentYear);
+  const secondHalfPts = axisYears.map((y,i) => ({y:parseInt(y), v:perYear[i]}))
+                          .filter(d => d.y >= splitMid && d.y < currentYear);
+  const firstHalfAvg  = firstHalfPts.length  ? firstHalfPts.reduce((a,d)=>a+d.v,0)/firstHalfPts.length   : 0;
+  const secondHalfAvg = secondHalfPts.length ? secondHalfPts.reduce((a,d)=>a+d.v,0)/secondHalfPts.length : 0;
+  const secondHalfGrowth = firstHalfAvg > 0 ? secondHalfAvg / firstHalfAvg : 1;
+  const LONG_GROWTH   = activeSpan >= 10 && slope > 0.1 && !DECLINING && !spikeDominated
+                        && secondHalfGrowth >= 1.5;  // second half must average 50% more than first
+  const PERSISTENT    = activeYears.length >= 15 && topTwoShare < 0.4;
+  const BROAD_HIST    = activeYears.length >= 18;
+  const INTERMITTENT  = activeYears.length < 10 && total >= 25 && !EVENT_SPIKE;
+  const SENATE_DOM    = senTotal >= 0.7 * total && total >= 20;
+  const HOUSE_DOM     = houTotal >= 0.7 * total && total >= 20;
+
+  if (LOW_VOLUME) {
+    tags.push("Low-volume topic");
+  } else {
+    // Multimodal tags take the first slot and suppress single-peak character tags
+    if      (MULTIMODAL) tags.push("Multiple peaks");
+    else if (BIMODAL)    tags.push("Two distinct periods");
+
+    if (!BIMODAL && !MULTIMODAL) {
+      if (LATE_EMERGE)  tags.push("Late emergence");
+      if (EVENT_SPIKE)  tags.push("Event-driven spike");
+      if (RECENT_SURGE) tags.push("Recent surge");
+      if (DECLINING)    tags.push("Declining after peak");
+      if (LONG_GROWTH  && tags.length < 2) tags.push("Long-term growth");
+      if (PERSISTENT   && tags.length < 2) tags.push("Persistent issue");
+      if (BROAD_HIST   && !tags.includes("Persistent issue") && tags.length < 2)
+                                            tags.push("Broad historical presence");
+      if (INTERMITTENT && tags.length < 2)  tags.push("Intermittent bursts");
+    } else {
+      // For multi-peak results, PERSISTENT/BROAD_HIST are still useful secondary tags
+      if (PERSISTENT && tags.length < 2)   tags.push("Persistent issue");
+      else if (BROAD_HIST && tags.length < 2) tags.push("Broad historical presence");
+    }
+    // Chamber tag appended last (up to 3 total)
+    if (tags.length < 3) {
+      if (SENATE_DOM)       tags.push("Senate-dominant");
+      else if (HOUSE_DOM)   tags.push("House-dominant");
+    }
+  }
+
+  // ── Factual summary line ────────────────────────────────────────────────────
+  const summary = activeYears.length === 1
+    ? `All ${total.toLocaleString()} matches in ${peakYear}`
+    : `Peaked in ${peakYear} (${peakCount.toLocaleString()} turns) · active in ${activeYears.length} of ${n} years`;
+
+  return { summary, tags };
+}
+
+function renderTrendInsight(senData, houData, axisYears) {
+  const el = document.getElementById("trend-insight");
+  if (!el) return;
+  const total = senData.reduce((a, b) => a + b, 0) + houData.reduce((a, b) => a + b, 0);
+  if (total === 0) { el.classList.add("d-none"); return; }
+  const { summary, tags } = analyzeTrend(senData, houData, axisYears);
+  if (!summary) { el.classList.add("d-none"); return; }
+  const tagHtml = tags.map(t => `<span class="ti-tag">${t}</span>`).join("");
+  el.innerHTML = `<div class="ti-summary">${summary}</div><div class="ti-tags">${tagHtml}</div>`;
+  el.classList.remove("d-none");
 }
 
 function _applyChartHighlight(year, chamber) {
