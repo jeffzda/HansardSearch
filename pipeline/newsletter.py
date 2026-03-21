@@ -82,6 +82,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import io
 import json
 import os
@@ -642,14 +643,19 @@ def select_bodies_for_claude(
         return []
 
     def row_to_dict(row, is_spike: bool = False) -> dict:
+        ch   = str(getattr(row, "chamber", ""))
+        dt   = str(getattr(row, "date", ""))
+        nid  = str(getattr(row, "name_id", ""))
+        body = str(getattr(row, "body", ""))
         return {
-            "date":          str(getattr(row, "date", "")),
+            "date":          dt,
             "speaker":       str(getattr(row, "name", "")),
             "party":         str(getattr(row, "party", "")),
-            "chamber":       str(getattr(row, "chamber", "")),
+            "chamber":       ch,
             "in_gov":        int(getattr(row, "in_gov", 0) or 0),
-            "body":          str(getattr(row, "body", "")),
+            "body":          body,
             "is_spike_year": is_spike,
+            "turn_hash":     _turn_hash(ch, dt, nid, body),
         }
 
     spike_years = {s["year"] for s in detect_spikes(matches_df)}
@@ -955,16 +961,22 @@ def select_week_turns_for_context(week_turns_df: pd.DataFrame) -> list[dict]:
     if "chamber" not in df.columns:
         df["chamber"] = "parliament"
     df = df.sort_values("date")
-    return [
-        {
-            "name":    r.get("name", "Unknown"),
-            "party":   r.get("party", ""),
-            "date":    str(r.get("date", "")),
-            "chamber": r.get("chamber", "parliament"),
-            "body":    str(r.get("body", "")),
-        }
-        for r in df.to_dict("records")
-    ]
+    result = []
+    for r in df.to_dict("records"):
+        ch   = r.get("chamber", "parliament")
+        dt   = str(r.get("date", ""))
+        nid  = str(r.get("name_id", ""))
+        body = str(r.get("body", ""))
+        result.append({
+            "name":      r.get("name", "Unknown"),
+            "speaker":   r.get("name", "Unknown"),
+            "party":     r.get("party", ""),
+            "date":      dt,
+            "chamber":   ch,
+            "body":      body,
+            "turn_hash": _turn_hash(ch, dt, nid, body),
+        })
+    return result
 
 
 def get_first_mention(matches_df: pd.DataFrame, phrase: str) -> dict:
@@ -1291,7 +1303,7 @@ def apply_inline_citations(
             date_fmt = datetime.strptime(date_str, "%Y-%m-%d").strftime("%-d %B %Y")
         except (ValueError, AttributeError):
             date_fmt = date_str
-        url  = _aph_url(chamber, date_str)
+        url  = _turn_url(t.get("turn_hash", ""))
         link = (
             f' <a href="{url}" target="_blank" rel="noopener">[Hansard&#8599;]</a>'
             if url else ""
@@ -1319,8 +1331,9 @@ _PARLINFO_DATASETS = {
     "house":  "hansardr%2Chansardr80",
 }
 
+
 def _aph_url(chamber: str, date_str: str) -> str:
-    """Return a ParlInfo search URL for the full Hansard for a given chamber + date."""
+    """ParlInfo day-level URL — used only by legacy format_citations_html."""
     try:
         d = datetime.strptime(date_str, "%Y-%m-%d")
     except (ValueError, TypeError):
@@ -1332,6 +1345,19 @@ def _aph_url(chamber: str, date_str: str) -> str:
         f";query=Dataset%3A{datasets}%20Date%3A{d.day}%2F{d.month}%2F{d.year}"
         f";rec=0;resCount=Default"
     )
+
+
+def _turn_hash(chamber: str, date: str, name_id: str, body: str) -> str:
+    """Stable 12-char hex identifier for a specific speech turn."""
+    raw = f"{chamber}|{date}|{name_id}|{body[:200]}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:12]
+
+
+def _turn_url(turn_hash: str) -> str:
+    """Deep link to a specific speech turn on hansardsearch.com.au."""
+    if not turn_hash:
+        return ""
+    return f"https://hansardsearch.com.au/t/{turn_hash}"
 
 
 def format_citations_html(citations: list[dict]) -> str:

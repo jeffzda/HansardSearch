@@ -314,6 +314,24 @@ if _speaker_path.exists() and not _HOUSE.empty:
 print("Corpora ready.")
 print(f"  SQLite DB: {_FTS_DB_PATH}")
 
+# ── Turn hash index (for /t/<hash> deep links) ──────────────────────────────
+_TURN_HASH_INDEX: dict[str, int] = {}  # hash -> SQLite rowid
+
+def _build_turn_hash_index():
+    import hashlib as _hl
+    cur = _FTS_CONN.execute(
+        "SELECT rowid, chamber, date, name_id, body FROM speeches"
+    )
+    idx = {}
+    for rowid, chamber, date, name_id, body in cur:
+        raw = f"{chamber or ''}|{date or ''}|{name_id or ''}|{(body or '')[:200]}"
+        h = _hl.sha256(raw.encode()).hexdigest()[:12]
+        idx[h] = rowid
+    _TURN_HASH_INDEX.update(idx)
+    print(f"  Turn hash index: {len(_TURN_HASH_INDEX):,} entries")
+
+_build_turn_hash_index()
+
 import threading as _threading
 _SCAN_SEMAPHORE  = _threading.Semaphore(1)  # serialise heavy scans on single-core VPS
 
@@ -718,6 +736,59 @@ def serve_newsletter(slug: str):
     return send_from_directory(str(issue_dir), "newsletter.html")
 
 
+_TURN_PAGE_STYLE = """
+body{font-family:Georgia,'Times New Roman',serif;background:#282828;color:#ebdbb2;margin:0;padding:0}
+.container{max-width:800px;margin:0 auto;padding:32px 24px}
+.meta{font-size:13px;color:#928374;margin-bottom:20px}
+.meta span{margin-right:16px}
+.speaker{font-size:20px;font-weight:700;color:#fabd2f;margin-bottom:4px}
+.body{line-height:1.8;margin:24px 0;white-space:pre-wrap}
+.back{font-size:13px;color:#83a598;text-decoration:none}
+.back:hover{text-decoration:underline}
+.chamber-badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;
+  font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-right:8px}
+.senate{background:#cc241d;color:#fff}.house{background:#98971a;color:#fff}
+"""
+
+_CHAMBER_LABELS = {"senate": "Senate", "house": "House of Representatives"}
+
+
+@app.route("/t/<turn_hash>")
+def turn_page(turn_hash: str):
+    from werkzeug.exceptions import abort
+    rowid = _TURN_HASH_INDEX.get(turn_hash)
+    if rowid is None:
+        abort(404)
+    row = _FTS_CONN.execute(
+        "SELECT chamber, date, name, party, body FROM speeches WHERE rowid=?", (rowid,)
+    ).fetchone()
+    if row is None:
+        abort(404)
+    chamber, date_str, name, party, body = row
+    try:
+        date_fmt = datetime.strptime(date_str, "%Y-%m-%d").strftime("%-d %B %Y")
+    except (ValueError, TypeError):
+        date_fmt = date_str or ""
+    ch_label = _CHAMBER_LABELS.get((chamber or "").lower(), chamber or "Parliament")
+    ch_cls   = (chamber or "").lower()
+    search_url = f"/?q={name or ''}&dr={date_str},{date_str}"
+    html = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{name} — {date_fmt} — Hansard</title>
+<style>{_TURN_PAGE_STYLE}</style>
+</head><body><div class="container">
+<div class="speaker">{name} <span style="font-size:14px;color:#928374">({party})</span></div>
+<div class="meta">
+  <span class="chamber-badge {ch_cls}">{ch_label}</span>
+  <span>{date_fmt}</span>
+</div>
+<div class="body">{body or ''}</div>
+<a class="back" href="{search_url}">Search for more speeches by {name} on this date ↗</a>
+</div></body></html>"""
+    return Response(html, mimetype="text/html")
+
+
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
@@ -738,7 +809,7 @@ def admin_page():
         return _LOGIN_HTML.format(error='<p class="err">Incorrect password.</p>'), 401
     if not session.get("admin"):
         return _LOGIN_HTML.format(error=""), 200
-    return send_from_directory("static", "about.html")
+    return send_from_directory("static", "admin.html")
 
 
 @app.route("/admin/logout")
