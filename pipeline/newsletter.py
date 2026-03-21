@@ -1028,7 +1028,7 @@ def build_top_speakers_text(matches_df: pd.DataFrame, top_n: int = 5) -> str:
 
 # ── Phase 8: Claude API ───────────────────────────────────────────────────────
 
-def build_system_prompt(citations: bool = True) -> str:
+def build_system_prompt(citations: bool = True, has_week_turns: bool = True) -> str:
     citation_instructions = ""
     if citations:
         citation_instructions = """
@@ -1079,6 +1079,31 @@ year-by-year counts, rates per 10,000 turns, dataset highs/lows, or any figure
 drawn from the STATISTICS block rather than from a specific speech turn.
 These are computed by the analysis pipeline and cannot be attributed to individual turns."""
 
+    if has_week_turns:
+        narrative_arc_instruction = (
+            "NARRATIVE ARC:\n"
+            "1. THIS WEEK (opening paragraph — mandatory) — Open by grounding the reader in the current sitting week. "
+            "Using the \"THIS WEEK'S PROCEEDINGS\" speech turns provided, describe specifically what debate, bill, or "
+            "issue drove the use of this phrase in parliament this week. Name the politicians, the chamber, the context. "
+            "This is the news hook.\n"
+            "2 onwards. Tell the story of this phrase through the parliamentary record: how its use has grown, peaked, "
+            "or faded; which parties and politicians have driven the debate; what the key controversies were; how the "
+            "framing has shifted over time. Weave in broader political or historical context only where it genuinely "
+            "explains something in the data — not as a mandatory origin story. Close by connecting the current week "
+            "back to that longer arc. Let the richness of the material determine how much you write."
+        )
+    else:
+        narrative_arc_instruction = (
+            "NARRATIVE ARC:\n"
+            "This phrase did not appear in the current sitting week's proceedings, so there is no news hook. "
+            "Write a pure historical analysis: tell the story of this phrase through the parliamentary record — "
+            "how its use has grown, peaked, or faded; which parties and politicians have driven the debate; "
+            "what the key controversies were; how the framing has shifted over time. Open with the most compelling "
+            "or dramatic moment in the record rather than a chronological origin. Weave in broader political or "
+            "historical context only where it genuinely illuminates the data. Let the richness of the material "
+            "determine how much you write."
+        )
+
     return f"""You are an expert parliamentary historian and political analyst of Australia.
 
 Your task is to write a compelling narrative history of how a particular phrase or term has appeared in the Australian Federal Parliament across both the Senate and House of Representatives — the story of how an idea entered parliament, who championed or fought it, what controversies it sparked, and how its political significance has shifted over time.
@@ -1091,9 +1116,7 @@ CORPUS SCOPE: The data covers 1998–present. Do not treat 1998 as the origin of
 
 GROUNDING: Claims about the data (specific quotes, speaker counts, spike years, party breakdowns) must be traceable to the statistics or speech turns provided. Where broader historical or political context genuinely illuminates the story, you may draw on your background knowledge — but only where it adds insight, not as a structural obligation.
 
-NARRATIVE ARC:
-1. THIS WEEK (opening paragraph — mandatory) — Open by grounding the reader in the current sitting week. Using the "THIS WEEK'S PROCEEDINGS" speech turns provided, describe specifically what debate, bill, or issue drove the use of this phrase in parliament this week. Name the politicians, the chamber, the context. This is the news hook.
-2 onwards. Tell the story of this phrase through the parliamentary record: how its use has grown, peaked, or faded; which parties and politicians have driven the debate; what the key controversies were; how the framing has shifted over time. Weave in broader political or historical context only where it genuinely explains something in the data — not as a mandatory origin story. Close by connecting the current week back to that longer arc. Let the richness of the material determine how much you write.
+{narrative_arc_instruction}
 
 Then add a <blockquote> of the most revealing or striking quote from the provided speech turns, followed by <p class="attribution"> with: [Speaker Name, Party, Date, Chamber].
 {citation_instructions}"""
@@ -1839,6 +1862,11 @@ def _process_chamber_phrase(
     chart_g = chart_gov_opp(matches_df,        phrase)
 
     # Narrative
+    # Rebuild system prompt now that we know whether there are current-week turns
+    phrase_system_prompt = build_system_prompt(
+        citations=args.citations,
+        has_week_turns=bool(week_bodies),
+    )
     if args.dry_run:
         narrative_html = f'<p><em>[Dry run — no API call. Phrase: "{phrase}", {len(bodies)} turns analysed.]</em></p>'
         raw_response   = ""
@@ -1859,7 +1887,7 @@ def _process_chamber_phrase(
             week_bodies=week_bodies,
         )
         narrative_html, raw_response, usage = generate_phrase_narrative(
-            client, system_prompt, user_prompt,
+            client, phrase_system_prompt, user_prompt,
             model=args.model,
             no_cache=args.no_cache,
             citations=args.citations,
