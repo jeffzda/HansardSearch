@@ -1376,20 +1376,14 @@ def _excerpt_around_matches(
     if not terms:
         return body
 
-    body_lower = body.lower()
-
     positions: list[tuple[int, int]] = []
     for term in terms:
-        term_lower = term.lower()
-        if not term_lower:
+        if not term:
             continue
-        start = 0
-        while True:
-            pos = body_lower.find(term_lower, start)
-            if pos == -1:
-                break
-            positions.append((pos, pos + len(term)))
-            start = pos + 1
+        # Word-boundary match: 'EV' matches standalone 'EV' but not 'every', 'never', etc.
+        pattern = r'\b' + re.escape(term) + r'\b'
+        for m in re.finditer(pattern, body, flags=re.IGNORECASE):
+            positions.append((m.start(), m.end()))
 
     if not positions:
         return body
