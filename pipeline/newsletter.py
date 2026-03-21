@@ -1442,7 +1442,7 @@ def inject_citation_popups(html: str) -> str:
 <style>
 #cite-popup{position:fixed;z-index:9999;background:#282828;border:1px solid #504945;
 border-radius:6px;box-shadow:0 4px 20px rgba(0,0,0,.55);padding:14px 16px;
-max-width:500px;max-height:380px;overflow-y:auto;font-size:13px;line-height:1.55;
+max-width:500px;max-height:520px;overflow-y:auto;font-size:13px;line-height:1.55;
 color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;scrollbar-width:thin}
 #cite-popup::-webkit-scrollbar{width:6px}
 #cite-popup::-webkit-scrollbar-track{background:#1d2021}
@@ -1453,8 +1453,50 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
 #cite-popup .pop-body{color:#d5c4a1;white-space:pre-wrap;word-break:break-word}
 #cite-popup .pop-link{display:block;margin-bottom:10px;font-size:11px;color:#83a598;text-decoration:none}
 #cite-popup .pop-link:hover{text-decoration:underline}
+#cite-popup .pop-feedback{margin-top:12px;display:flex;gap:8px;border-top:1px solid #3c3836;padding-top:10px}
+#cite-popup .pop-good{background:#458588;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer}
+#cite-popup .pop-good:hover{background:#83a598}
+#cite-popup .pop-report-btn{background:transparent;color:#928374;border:1px solid #504945;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer}
+#cite-popup .pop-report-btn:hover{color:#ebdbb2;border-color:#928374}
+#cite-popup .pop-report{margin-top:8px;font-size:12px;display:none}
+#cite-popup .pop-group-label{color:#fabd2f;font-size:11px;font-weight:700;margin:8px 0 4px}
+#cite-popup .pop-report label{display:block;margin:3px 0;color:#d5c4a1;cursor:pointer}
+#cite-popup .pop-report input[type=checkbox]{margin-right:5px;accent-color:#83a598}
+#cite-popup .pop-report-actions{margin-top:8px;display:flex;gap:6px}
+#cite-popup .pop-submit{background:#cc241d;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer}
+#cite-popup .pop-submit:hover{background:#fb4934}
+#cite-popup .pop-cancel{background:transparent;color:#928374;border:1px solid #504945;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer}
+#cite-popup .pop-cancel:hover{color:#ebdbb2}
+#cite-popup .pop-confirm{margin-top:10px;color:#b8bb26;font-size:12px;font-style:italic;border-top:1px solid #3c3836;padding-top:8px;display:none}
 </style>
-<div id="cite-popup"><div class="pop-speaker"></div><div class="pop-meta"></div><a class="pop-link" target="_blank" rel="noopener"></a><div class="pop-body"></div></div>
+<div id="cite-popup">
+  <div class="pop-speaker"></div>
+  <div class="pop-meta"></div>
+  <a class="pop-link" target="_blank" rel="noopener"></a>
+  <div class="pop-body"></div>
+  <div class="pop-feedback">
+    <button class="pop-good">&#128077; Good citation</button>
+    <button class="pop-report-btn">&#9872; Report issue</button>
+  </div>
+  <div class="pop-report">
+    <div class="pop-group-label">Factual errors</div>
+    <label><input type="checkbox" value="wrong_speaker"> Wrong speaker</label>
+    <label><input type="checkbox" value="wrong_party"> Wrong party</label>
+    <label><input type="checkbox" value="wrong_chamber"> Wrong chamber</label>
+    <label><input type="checkbox" value="wrong_date"> Wrong date</label>
+    <label><input type="checkbox" value="quote_not_found"> Quote not in speech</label>
+    <label><input type="checkbox" value="not_a_speech"> Statistic not a speech turn</label>
+    <div class="pop-group-label">Interpretive errors</div>
+    <label><input type="checkbox" value="doesnt_support_claim"> Citation doesn&#8217;t support claim</label>
+    <label><input type="checkbox" value="misrepresents_speaker"> Misrepresents what speaker said</label>
+    <label><input type="checkbox" value="out_of_context"> Out of context</label>
+    <div class="pop-report-actions">
+      <button class="pop-submit">Submit report</button>
+      <button class="pop-cancel">Cancel</button>
+    </div>
+  </div>
+  <div class="pop-confirm">Thank you for your feedback.</div>
+</div>
 <script>
 (function(){
   var popup=document.getElementById('cite-popup');
@@ -1462,18 +1504,70 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
   var metEl=popup.querySelector('.pop-meta');
   var bodEl=popup.querySelector('.pop-body');
   var lnkEl=popup.querySelector('.pop-link');
+  var fbDiv=popup.querySelector('.pop-feedback');
+  var repDiv=popup.querySelector('.pop-report');
+  var repBtn=popup.querySelector('.pop-report-btn');
+  var conDiv=popup.querySelector('.pop-confirm');
   var hideTimer=null;
   var _cache={};
+  var currentUrl='';
 
   function posFromEl(sup){
     var r=sup.getBoundingClientRect();
     var x=r.left,y=r.bottom+6;
-    var pw=500,ph=380;
+    var pw=500,ph=520;
     if(x+pw>window.innerWidth)x=Math.max(4,window.innerWidth-pw-10);
     if(y+ph>window.innerHeight)y=Math.max(4,r.top-ph-6);
     popup.style.left=x+'px';
     popup.style.top=y+'px';
   }
+
+  function resetFeedback(){
+    fbDiv.style.display='flex';
+    repDiv.style.display='none';
+    repBtn.style.display='inline-block';
+    conDiv.style.display='none';
+    popup.querySelectorAll('.pop-report input').forEach(function(i){i.checked=false;});
+  }
+
+  function showConfirm(){
+    fbDiv.style.display='none';
+    repDiv.style.display='none';
+    conDiv.style.display='block';
+  }
+
+  async function postFeedback(feedback){
+    var hash=(currentUrl.match(/\/t\/([a-f0-9]+)/)||[])[1]||'';
+    try{
+      await fetch('https://hansardsearch.com.au/api/citation-feedback',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({turn_hash:hash,turn_url:currentUrl,feedback:feedback})
+      });
+    }catch(e){}
+  }
+
+  popup.querySelector('.pop-good').addEventListener('click',async function(){
+    await postFeedback('good');
+    showConfirm();
+  });
+
+  repBtn.addEventListener('click',function(){
+    repDiv.style.display='block';
+    repBtn.style.display='none';
+  });
+
+  popup.querySelector('.pop-cancel').addEventListener('click',function(){
+    repDiv.style.display='none';
+    repBtn.style.display='inline-block';
+  });
+
+  popup.querySelector('.pop-submit').addEventListener('click',async function(){
+    var checked=Array.from(popup.querySelectorAll('.pop-report input:checked')).map(function(i){return i.value;});
+    if(!checked.length)return;
+    await postFeedback(checked);
+    showConfirm();
+  });
 
   async function show(sup){
     var a=sup.querySelector('a');
@@ -1482,6 +1576,7 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
     if(!refEl)return;
     var link=refEl.querySelector('a[href*="/t/"]');
     var url=link?link.href:null;
+    currentUrl=url||'';
     var speaker=(refEl.querySelector('.citation-speaker')||{}).textContent||'';
     var meta=refEl.textContent.replace(speaker,'').replace(/\[Hansard[^\]]*]/g,'').replace(/\s+/g,' ').trim().replace(/,\s*$/,'');
     spkEl.textContent=speaker;
@@ -1489,6 +1584,7 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
     bodEl.textContent=url?'Loading\u2026':'';
     lnkEl.textContent=url?'View full record \u2197':'';
     lnkEl.href=url||'';
+    resetFeedback();
     posFromEl(sup);
     popup.style.display='block';
     if(!url)return;

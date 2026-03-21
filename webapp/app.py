@@ -795,6 +795,31 @@ def turn_page(turn_hash: str):
     return resp
 
 
+_CITATION_REPORTS_PATH = Path(__file__).parent / "citation_reports.jsonl"
+
+
+@app.route("/api/citation-feedback", methods=["POST", "OPTIONS"])
+def citation_feedback():
+    if request.method == "OPTIONS":
+        resp = Response("", status=204)
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        return resp
+    data = request.get_json(force=True, silent=True) or {}
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "turn_hash": data.get("turn_hash", ""),
+        "turn_url": data.get("turn_url", ""),
+        "feedback": data.get("feedback", ""),
+    }
+    with _CITATION_REPORTS_PATH.open("a") as f:
+        f.write(json.dumps(entry) + "\n")
+    resp = jsonify({"ok": True})
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
+
+
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
