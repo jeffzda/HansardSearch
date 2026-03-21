@@ -2098,6 +2098,8 @@ def main() -> None:
     html_path = out_dir / "newsletter.html"
     html_path.write_text(html, encoding="utf-8")
     print(f"  Written: {html_path}")
+    if result.phrase and result.phrase != "(no phrase)":
+        (out_dir / "phrase.txt").write_text(result.phrase, encoding="utf-8")
 
     # ── UPDATE MANIFEST ───────────────────────────────────────────────────────
     phrase_used = result.phrase if result.phrase != "(no phrase)" else None

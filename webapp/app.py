@@ -14,19 +14,20 @@ import re
 import io
 import csv
 import json
+import os
 import time
 import hashlib
 import sqlite3
-import secrets as _secrets
+import secrets
+
 import threading as _cache_threading
 from collections import Counter
 from datetime import datetime, timezone, timedelta, date
-from functools import wraps
+
 from pathlib import Path
 
 import pandas as pd
-from flask import Flask, request, jsonify, send_from_directory, Response, session, redirect
-from werkzeug.security import generate_password_hash, check_password_hash
+from flask import Flask, request, jsonify, send_from_directory, Response, session, redirect, url_for
 
 # ── Search result cache (all queries, 5-minute TTL) ─────────────────────────
 _SEARCH_CACHE: dict = {}   # md5_key -> {"expires": float, "data": bytes}
@@ -88,6 +89,28 @@ from search_corpus import (
 
 app = Flask(__name__, static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # 16 KB — more than enough for any search request
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
+
+_ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+_LOGIN_HTML = """<!doctype html>
+<html><head><meta charset=utf-8><title>Admin Login</title>
+<style>
+body{{font-family:Georgia,serif;background:#282828;color:#ebdbb2;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
+.box{{background:#1d2021;border:1px solid #3c3836;border-radius:8px;padding:40px;width:320px}}
+h2{{color:#fabd2f;margin:0 0 24px;font-size:20px}}
+input{{width:100%;box-sizing:border-box;background:#32302f;border:1px solid #504945;color:#ebdbb2;padding:10px 12px;border-radius:4px;font-size:15px;margin-bottom:16px}}
+button{{width:100%;background:#fabd2f;color:#282828;border:none;padding:10px;border-radius:4px;font-size:15px;font-weight:700;cursor:pointer}}
+.err{{color:#fb4934;font-size:13px;margin-bottom:12px}}
+</style></head>
+<body><div class="box">
+<h2>Admin</h2>
+{error}
+<form method=post>
+<input type=password name=password placeholder="Password" autofocus>
+<button type=submit>Sign in</button>
+</form>
+</div></body></html>"""
 
 
 @app.errorhandler(Exception)
@@ -108,77 +131,6 @@ def handle_404(e):
         return jsonify({"error": "Not found"}), 404
     return e
 
-
-# ── Secret key ─────────────────────────────────────────────────────────────────
-_SECRET_KEY_PATH = Path(__file__).parent / ".secret_key"
-if _SECRET_KEY_PATH.exists():
-    app.secret_key = _SECRET_KEY_PATH.read_text().strip()
-else:
-    _key = _secrets.token_hex(32)
-    _SECRET_KEY_PATH.write_text(_key)
-    app.secret_key = _key
-app.permanent_session_lifetime = timedelta(days=30)
-
-# ── User database ──────────────────────────────────────────────────────────────
-_DB_PATH = Path(__file__).parent / "users.db"
-
-def _init_db():
-    with sqlite3.connect(_DB_PATH) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                email       TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at  TEXT NOT NULL,
-                expires_at  TEXT,
-                label       TEXT
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS access_requests (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                name         TEXT NOT NULL,
-                email        TEXT NOT NULL,
-                organisation TEXT,
-                reason       TEXT,
-                requested_at TEXT NOT NULL,
-                status       TEXT NOT NULL DEFAULT 'pending'
-            )
-        """)
-        conn.commit()
-
-_init_db()
-
-
-def _get_user(user_id: int):
-    with sqlite3.connect(_DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-
-
-def login_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        user_id = session.get("user_id")
-        if not user_id:
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Authentication required", "redirect": "/login"}), 401
-            return redirect("/login")
-        row = _get_user(user_id)
-        if not row:
-            session.clear()
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Authentication required", "redirect": "/login"}), 401
-            return redirect("/login")
-        if row["expires_at"]:
-            expires = datetime.fromisoformat(row["expires_at"])
-            if datetime.utcnow() > expires:
-                session.clear()
-                if request.path.startswith("/api/"):
-                    return jsonify({"error": "Your access has expired", "redirect": "/login?expired=1"}), 403
-                return redirect("/login?expired=1")
-        return f(*args, **kwargs)
-    return decorated
 
 
 BASE = Path(__file__).parent.parent
@@ -728,6 +680,44 @@ def _extract_seeds(matched_df: pd.DataFrame, n: int = 20) -> list:
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+_NEWSLETTERS_DIR = BASE / "newsletters"
+
+
+def _phrase_to_slug(phrase: str) -> str:
+    """Convert a search phrase to a URL slug."""
+    slug = phrase.lower()
+    slug = re.sub(r"[&]+", "and", slug)
+    slug = re.sub(r"[|]+", "or", slug)
+    slug = re.sub(r"[~]+", "not", slug)
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    return slug.strip("-")
+
+
+def _slug_to_latest_issue(slug: str) -> Path | None:
+    """Find the latest newsletter folder matching the slug via phrase.txt files."""
+    matches = []
+    if not _NEWSLETTERS_DIR.exists():
+        return None
+    for issue_dir in _NEWSLETTERS_DIR.iterdir():
+        if not issue_dir.is_dir():
+            continue
+        phrase_file = issue_dir / "phrase.txt"
+        html = issue_dir / "newsletter.html"
+        if phrase_file.exists() and html.exists():
+            phrase = phrase_file.read_text(encoding="utf-8").strip()
+            if _phrase_to_slug(phrase) == slug:
+                matches.append(issue_dir)
+    return sorted(matches)[-1] if matches else None
+
+
+@app.route("/newsletters/<path:slug>")
+def serve_newsletter(slug: str):
+    issue_dir = _slug_to_latest_issue(slug)
+    if issue_dir is None:
+        return f"No newsletter found for '{slug}'", 404
+    return send_from_directory(str(issue_dir), "newsletter.html")
+
+
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
@@ -738,14 +728,26 @@ def help_page():
     return send_from_directory("static", "help.html")
 
 
-@app.route("/about")
-@login_required
-def about_page():
+@app.route("/admin", methods=["GET", "POST"])
+def admin_page():
+    if request.method == "POST":
+        pw = request.form.get("password", "")
+        if _ADMIN_PASSWORD and secrets.compare_digest(pw, _ADMIN_PASSWORD):
+            session["admin"] = True
+            return redirect(url_for("admin_page"))
+        return _LOGIN_HTML.format(error='<p class="err">Incorrect password.</p>'), 401
+    if not session.get("admin"):
+        return _LOGIN_HTML.format(error=""), 200
     return send_from_directory("static", "about.html")
 
 
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin", None)
+    return redirect(url_for("admin_page"))
+
+
 @app.route("/api/analytics")
-@login_required
 def analytics():
     from collections import defaultdict
     events = []
@@ -815,74 +817,6 @@ def analytics():
         "top_queries":      top_queries,
     })
 
-
-@app.route("/login")
-def login_page():
-    return send_from_directory("static", "login.html")
-
-
-@app.route("/request-access")
-def request_access_page():
-    return send_from_directory("static", "request_access.html")
-
-
-@app.route("/api/request-access", methods=["POST"])
-def api_request_access():
-    body = request.get_json(force=True, silent=True) or {}
-    name  = (body.get("name") or "").strip()
-    email = (body.get("email") or "").strip().lower()
-    org   = (body.get("organisation") or "").strip()
-    reason = (body.get("reason") or "").strip()
-    if not name or not email:
-        return jsonify({"error": "Name and email are required."}), 400
-    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
-    with sqlite3.connect(_DB_PATH) as conn:
-        conn.execute(
-            "INSERT INTO access_requests (name, email, organisation, reason, requested_at) VALUES (?,?,?,?,?)",
-            (name, email, org, reason, now),
-        )
-        conn.commit()
-    app.logger.info("Access request: %s <%s> org=%r", name, email, org)
-    return jsonify({"ok": True})
-
-
-@app.route("/api/login", methods=["POST"])
-def api_login():
-    body = request.get_json(force=True, silent=True) or {}
-    email    = (body.get("email") or "").strip().lower()
-    password = body.get("password") or ""
-    if not email or not password:
-        return jsonify({"error": "Email and password are required"}), 400
-    with sqlite3.connect(_DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-    if not row or not check_password_hash(row["password_hash"], password):
-        _log({"event": "login_fail", "email": email, "found_user": bool(row)})
-        return jsonify({"error": "Invalid email or password"}), 401
-    if row["expires_at"]:
-        if datetime.utcnow() > datetime.fromisoformat(row["expires_at"]):
-            return jsonify({"error": "Your access has expired. Please contact Jeff to renew."}), 403
-    session.permanent = True
-    session["user_id"] = row["id"]
-    _log({"event": "login", "email": email, "label": row["label"]})
-    return jsonify({"ok": True})
-
-
-@app.route("/api/me")
-def api_me():
-    user = _get_user(session["user_id"])
-    return jsonify({
-        "email": user["email"],
-        "label": user["label"],
-        "expires_at": user["expires_at"],
-    })
-
-
-@app.route("/api/logout", methods=["POST"])
-def api_logout():
-    _log({"event": "logout", "user_id": session.get("user_id")})
-    session.clear()
-    return jsonify({"ok": True})
 
 
 @app.route("/api/metadata")
@@ -1047,7 +981,7 @@ def search():
     _cached = _cache_get(_cache_key)
     if _cached is not None:
         if expression:
-            _log({"event": "search", "user_id": session.get("user_id"),
+            _log({"event": "search",
                   "expression": expression, "chamber": chamber,
                   "filters": filters, "page": page, "cache_hit": True})
         return Response(_cached, status=200, mimetype="application/json")
@@ -1329,7 +1263,7 @@ def search():
     _cache_set(_cache_key, _response_data)
 
     if expression:
-        _log({"event": "search", "user_id": session.get("user_id"),
+        _log({"event": "search",
               "expression": expression, "chamber": chamber,
               "filters": filters, "total": total,
               "senate_count": senate_count, "house_count": house_count,
@@ -1572,7 +1506,7 @@ def download():
             ])
 
         csv_str = out.getvalue()
-        _log({"event": "download", "user_id": session.get("user_id"),
+        _log({"event": "download",
               "expression": expression, "chamber": chamber,
               "filters": filters, "rows": len(matched)})
         return Response(
