@@ -1352,9 +1352,20 @@ def _aph_url(chamber: str, date_str: str) -> str:
     )
 
 
-def _turn_hash(chamber: str, date: str, name_id: str, body: str) -> str:
-    """Stable 12-char hex identifier for a specific speech turn."""
-    raw = f"{chamber}|{date}|{name_id}|{body[:200]}"
+def _turn_hash(chamber: str, date: str, name_id, body: str) -> str:
+    """Stable 12-char hex identifier for a specific speech turn.
+
+    name_id is normalised: None / NaN / 'nan' / 'None' all become '' so that
+    the pipeline (pandas NaN) and the webapp (sqlite3 None) produce identical hashes.
+    """
+    import math as _math
+    if name_id is None or (isinstance(name_id, float) and _math.isnan(name_id)):
+        nid = ""
+    else:
+        nid = str(name_id)
+        if nid in ("nan", "None", "NaN"):
+            nid = ""
+    raw = f"{chamber}|{date}|{nid}|{body[:200]}"
     return hashlib.sha256(raw.encode()).hexdigest()[:12]
 
 
