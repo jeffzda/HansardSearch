@@ -760,18 +760,22 @@ def turn_page(turn_hash: str):
     if rowid is None:
         abort(404)
     row = _FTS_CONN.execute(
-        "SELECT chamber, date, name, party, body FROM speeches WHERE rowid=?", (rowid,)
+        "SELECT chamber, date, name, name_id, party, body FROM speeches WHERE rowid=?", (rowid,)
     ).fetchone()
     if row is None:
         abort(404)
-    chamber, date_str, name, party, body = row
+    chamber, date_str, name, name_id, party, body = row
     try:
         date_fmt = datetime.strptime(date_str, "%Y-%m-%d").strftime("%-d %B %Y")
     except (ValueError, TypeError):
         date_fmt = date_str or ""
     ch_label = _CHAMBER_LABELS.get((chamber or "").lower(), chamber or "Parliament")
     ch_cls   = (chamber or "").lower()
-    search_url = f"/?q={name or ''}&dr={date_str},{date_str}"
+    # Use speaker filter (nid=) + date filter (dr=) — not a text search on the name
+    if name_id:
+        search_url = f"/?nid={name_id}&dr={date_str},{date_str}"
+    else:
+        search_url = f"/?dr={date_str},{date_str}"
     html = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
