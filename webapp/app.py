@@ -743,8 +743,9 @@ body{font-family:Georgia,'Times New Roman',serif;background:#282828;color:#ebdbb
 .meta span{margin-right:16px}
 .speaker{font-size:20px;font-weight:700;color:#fabd2f;margin-bottom:4px}
 .body{line-height:1.8;margin:24px 0;white-space:pre-wrap}
-.back{font-size:13px;color:#83a598;text-decoration:none}
-.back:hover{text-decoration:underline}
+.back{display:inline-block;font-size:14px;color:#83a598;text-decoration:none;
+  background:#3c3836;border:1px solid #504945;border-radius:4px;padding:7px 14px;margin-bottom:20px}
+.back:hover{background:#504945;color:#ebdbb2;text-decoration:none}
 .chamber-badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;
   font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-right:8px}
 .senate{background:#cc241d;color:#fff}.house{background:#98971a;color:#fff}
@@ -782,13 +783,13 @@ def turn_page(turn_hash: str):
 <title>{name} — {date_fmt} — Hansard</title>
 <style>{_TURN_PAGE_STYLE}</style>
 </head><body><div class="container">
+<a class="back" href="{search_url}">View this record on Hansard Search ↗</a>
 <div class="speaker">{name} <span style="font-size:14px;color:#928374">({party})</span></div>
 <div class="meta">
   <span class="chamber-badge {ch_cls}">{ch_label}</span>
   <span>{date_fmt}</span>
 </div>
 <div class="body">{body or ''}</div>
-<a class="back" href="{search_url}">Search for more speeches by {name} on this date ↗</a>
 </div></body></html>"""
     resp = Response(html, mimetype="text/html")
     resp.headers["Access-Control-Allow-Origin"] = "*"

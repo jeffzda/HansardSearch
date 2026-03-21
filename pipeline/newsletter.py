@@ -1591,7 +1591,7 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
     spkEl.textContent=speaker;
     metEl.textContent=meta;
     bodEl.textContent=url?'Loading\u2026':'';
-    lnkEl.textContent=url?'View full record \u2197':'';
+    lnkEl.textContent=url?'Shareable Permalink \u2197':'';
     lnkEl.href=url||'';
     resetFeedback();
     posFromEl(sup);
