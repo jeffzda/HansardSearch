@@ -321,6 +321,22 @@ function escHtml(s) {
 
 loadAnalytics();
 
+async function deleteFeedback(btn) {
+  const row = btn.closest('tr');
+  const ts = row.dataset.ts;
+  if (!ts) return;
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const resp = await fetch('/api/citation-feedback-log?ts=' + encodeURIComponent(ts), { method: 'DELETE' });
+    if (!resp.ok) throw new Error(resp.status);
+    row.remove();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '×';
+  }
+}
+
 async function loadFeedback() {
   const wrap = document.getElementById('feedback-wrap');
   let data;
@@ -353,7 +369,7 @@ async function loadFeedback() {
     if (Array.isArray(fb)) return fb.map(k => escHtml(LABELS[k] || k)).join(', ');
     return escHtml(String(fb));
   }
-  let html = '<table class="query-table"><thead><tr><th>Time</th><th>Newsletter</th><th>#</th><th>Turn</th><th>Feedback</th></tr></thead><tbody>';
+  let html = '<table class="query-table"><thead><tr><th>Time</th><th>Newsletter</th><th>#</th><th>Turn</th><th>Feedback</th><th></th></tr></thead><tbody>';
   for (const e of data) {
     const ts = e.ts ? new Date(e.ts).toLocaleString('en-AU', {dateStyle:'short', timeStyle:'short'}) : '';
     const hash = e.turn_hash || '';
@@ -363,12 +379,13 @@ async function loadFeedback() {
       : escHtml(hash);
     const nl = e.newsletter || '';
     const cnum = e.citation_num || '';
-    html += `<tr>
+    html += `<tr data-ts="${escHtml(e.ts||'')}">
       <td style="white-space:nowrap;color:var(--tn-comment);font-size:0.8rem">${escHtml(ts)}</td>
       <td style="font-size:0.8rem;color:var(--tn-fg-dim)">${escHtml(nl)}</td>
       <td style="font-family:monospace;color:var(--tn-comment);text-align:center">${escHtml(cnum)}</td>
       <td>${turnCell}</td>
       <td>${fmtFeedback(e.feedback)}</td>
+      <td><button onclick="deleteFeedback(this)" style="background:none;border:none;color:var(--tn-comment);cursor:pointer;font-size:1rem;padding:0 4px" title="Delete">&times;</button></td>
     </tr>`;
   }
   html += '</tbody></table>';

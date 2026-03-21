@@ -798,10 +798,31 @@ def turn_page(turn_hash: str):
 _CITATION_REPORTS_PATH = Path(__file__).parent / "citation_reports.jsonl"
 
 
-@app.route("/api/citation-feedback-log")
+@app.route("/api/citation-feedback-log", methods=["GET", "DELETE"])
 def citation_feedback_log():
     if not session.get("admin"):
         return jsonify({"error": "forbidden"}), 403
+    if request.method == "DELETE":
+        ts = request.args.get("ts", "")
+        if not ts:
+            return jsonify({"error": "missing ts"}), 400
+        lines = []
+        if _CITATION_REPORTS_PATH.exists():
+            with _CITATION_REPORTS_PATH.open() as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("ts") != ts:
+                            lines.append(line)
+                    except json.JSONDecodeError:
+                        lines.append(line)
+        with _CITATION_REPORTS_PATH.open("w") as f:
+            f.write("\n".join(lines) + ("\n" if lines else ""))
+        return jsonify({"ok": True})
+    # GET
     entries = []
     if _CITATION_REPORTS_PATH.exists():
         with _CITATION_REPORTS_PATH.open() as f:
