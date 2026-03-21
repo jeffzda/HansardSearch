@@ -331,6 +331,7 @@ def _build_turn_hash_index():
     print(f"  Turn hash index: {len(_TURN_HASH_INDEX):,} entries")
 
 _build_turn_hash_index()
+_ROWID_TO_HASH: dict[int, str] = {v: k for k, v in _TURN_HASH_INDEX.items()}
 
 import threading as _threading
 _SCAN_SEMAPHORE  = _threading.Semaphore(1)  # serialise heavy scans on single-core VPS
@@ -1375,6 +1376,7 @@ def search():
             "body": body_text,
             "body_preview": body_preview,
             "matched_terms": matched_terms,
+            "turn_hash": _ROWID_TO_HASH.get(int(row.get("_rowid") or 0), ""),
         })
 
     _t4 = time.perf_counter()

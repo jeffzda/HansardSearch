@@ -2918,7 +2918,8 @@ function renderTableBody() {
         ${_partyBadge(res.party)}
         <span>${esc(res.state_or_electorate)}</span>
       </div>
-      <p class="preview-text" style="font-size:0.74rem;color:var(--tn-fg-dim);margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4">${esc(res.body_preview)}</p>`;
+      <p class="preview-text" style="font-size:0.74rem;color:var(--tn-fg-dim);margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4">${esc(res.body_preview)}</p>
+      ${res.turn_hash ? `<div style="margin-top:6px;text-align:right"><a href="/t/${esc(res.turn_hash)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:0.72rem;color:var(--tn-comment);text-decoration:none">Shareable Permalink &#x2197;</a></div>` : ''}`;
 
     list.appendChild(card);
   }
