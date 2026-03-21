@@ -798,6 +798,24 @@ def turn_page(turn_hash: str):
 _CITATION_REPORTS_PATH = Path(__file__).parent / "citation_reports.jsonl"
 
 
+@app.route("/api/citation-feedback-log")
+def citation_feedback_log():
+    if not session.get("admin"):
+        return jsonify({"error": "forbidden"}), 403
+    entries = []
+    if _CITATION_REPORTS_PATH.exists():
+        with _CITATION_REPORTS_PATH.open() as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+    entries.sort(key=lambda e: e.get("ts", ""), reverse=True)
+    return jsonify(entries)
+
+
 @app.route("/api/citation-feedback", methods=["POST", "OPTIONS"])
 def citation_feedback():
     if request.method == "OPTIONS":
