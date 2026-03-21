@@ -1451,10 +1451,10 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
 #cite-popup .pop-speaker{font-weight:700;color:#fabd2f;margin-bottom:3px}
 #cite-popup .pop-meta{font-size:11px;color:#928374;margin-bottom:10px}
 #cite-popup .pop-body{color:#d5c4a1;white-space:pre-wrap;word-break:break-word}
-#cite-popup .pop-link{display:block;margin-top:10px;font-size:11px;color:#83a598;text-decoration:none}
+#cite-popup .pop-link{display:block;margin-bottom:10px;font-size:11px;color:#83a598;text-decoration:none}
 #cite-popup .pop-link:hover{text-decoration:underline}
 </style>
-<div id="cite-popup"><div class="pop-speaker"></div><div class="pop-meta"></div><div class="pop-body"></div><a class="pop-link" target="_blank" rel="noopener"></a></div>
+<div id="cite-popup"><div class="pop-speaker"></div><div class="pop-meta"></div><a class="pop-link" target="_blank" rel="noopener"></a><div class="pop-body"></div></div>
 <script>
 (function(){
   var popup=document.getElementById('cite-popup');
