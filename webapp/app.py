@@ -790,7 +790,9 @@ def turn_page(turn_hash: str):
 <div class="body">{body or ''}</div>
 <a class="back" href="{search_url}">Search for more speeches by {name} on this date ↗</a>
 </div></body></html>"""
-    return Response(html, mimetype="text/html")
+    resp = Response(html, mimetype="text/html")
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 
 @app.route("/")

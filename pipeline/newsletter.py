@@ -1430,6 +1430,81 @@ def _turn_url(turn_hash: str) -> str:
     return f"https://hansardsearch.com.au/t/{turn_hash}"
 
 
+def inject_citation_popups(html: str) -> str:
+    """Post-process newsletter HTML to add hover popups on inline citations.
+
+    Injects a self-contained CSS+HTML+JS block before </body>.  On hover over a
+    [N] citation superscript, fetches the corresponding turn page from
+    hansardsearch.com.au/t/<hash> and displays speaker + body text in a floating
+    popup.  Gracefully degrades if the fetch fails.
+    """
+    _POPUP_BLOCK = r"""
+<style>
+#cite-popup{position:fixed;z-index:9999;background:#282828;border:1px solid #504945;
+border-radius:6px;box-shadow:0 4px 20px rgba(0,0,0,.55);padding:14px 16px;
+max-width:500px;max-height:380px;overflow-y:auto;font-size:13px;line-height:1.55;
+color:#ebdbb2;pointer-events:none;display:none}
+#cite-popup .pop-speaker{font-weight:700;color:#fabd2f;margin-bottom:3px}
+#cite-popup .pop-meta{font-size:11px;color:#928374;margin-bottom:10px}
+#cite-popup .pop-body{color:#d5c4a1;white-space:pre-wrap;word-break:break-word}
+</style>
+<div id="cite-popup"><div class="pop-speaker"></div><div class="pop-meta"></div><div class="pop-body"></div></div>
+<script>
+(function(){
+  var popup=document.getElementById('cite-popup');
+  var spkEl=popup.querySelector('.pop-speaker');
+  var metEl=popup.querySelector('.pop-meta');
+  var bodEl=popup.querySelector('.pop-body');
+  var hideTimer=null;
+  var _cache={};
+
+  function pos(e){
+    var x=e.clientX+14,y=e.clientY+14;
+    var pw=popup.offsetWidth||500,ph=popup.offsetHeight||200;
+    popup.style.left=(x+pw>window.innerWidth?x-pw-28:x)+'px';
+    popup.style.top=(y+ph>window.innerHeight?y-ph-28:y)+'px';
+  }
+
+  async function show(sup,e){
+    var a=sup.querySelector('a');
+    if(!a)return;
+    var refEl=document.getElementById(a.getAttribute('href').slice(1));
+    if(!refEl)return;
+    var link=refEl.querySelector('a[href*="/t/"]');
+    var url=link?link.href:null;
+    var speaker=(refEl.querySelector('.citation-speaker')||{}).textContent||'';
+    var meta=refEl.textContent.replace(speaker,'').replace(/\[Hansard[^\]]*\]/g,'').replace(/\s+/g,' ').trim().replace(/,\s*$/,'');
+    spkEl.textContent=speaker;
+    metEl.textContent=meta;
+    bodEl.textContent=url?'Loading\u2026':'';
+    popup.style.display='block';
+    pos(e);
+    if(!url)return;
+    if(_cache[url]){bodEl.textContent=_cache[url];return;}
+    try{
+      var r=await fetch(url);
+      if(!r.ok)throw r.status;
+      var t=await r.text();
+      var d=new DOMParser().parseFromString(t,'text/html');
+      var b=(d.querySelector('.body')||{}).textContent||'';
+      _cache[url]=b.trim();
+      bodEl.textContent=_cache[url];
+    }catch(err){
+      bodEl.textContent='(Could not load turn text)';
+    }
+  }
+
+  document.querySelectorAll('sup.cite').forEach(function(sup){
+    sup.addEventListener('mouseenter',function(e){clearTimeout(hideTimer);show(sup,e);});
+    sup.addEventListener('mousemove',pos);
+    sup.addEventListener('mouseleave',function(){hideTimer=setTimeout(function(){popup.style.display='none';},200);});
+  });
+})();
+</script>
+"""
+    return html.replace("</body>", _POPUP_BLOCK + "\n</body>", 1)
+
+
 def format_citations_html(citations: list[dict]) -> str:
     """Format resolved citations as an HTML block with APH Hansard hyperlinks."""
     if not citations:
@@ -2194,6 +2269,7 @@ def main() -> None:
         sitting_days=sitting_days,
         citations_on=args.citations,
     )
+    html = inject_citation_popups(html)
     html_path = out_dir / "newsletter.html"
     html_path.write_text(html, encoding="utf-8")
     print(f"  Written: {html_path}")
