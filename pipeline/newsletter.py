@@ -1151,23 +1151,24 @@ def build_phrase_user_prompt(
             f"count does not necessarily indicate a declining trend.\n"
         )
 
-    # Build current-week context section using pre-selected week_bodies list
+    # Build current-week context section — numbering continues from historical turns
     week_context_text = ""
+    week_offset = len(bodies_for_claude)
     if week_bodies:
         week_lines = []
-        for i, wb in enumerate(week_bodies, 1):
+        for i, wb in enumerate(week_bodies, week_offset + 1):
             ch   = wb.get("chamber", "parliament")
             spkr = wb.get("name", "Unknown")
             pty  = wb.get("party", "")
             dt   = wb.get("date", "")
-            body = str(wb.get("body", ""))[:600].strip()
-            week_lines.append(f"  [W{i}] [{dt}] {spkr} ({pty}) [{ch}]\n  {body}")
+            body = str(wb.get("body", "")).strip()
+            week_lines.append(f"  [{i}] [{dt}] {spkr} ({pty}) [{ch}]\n  {body}")
         week_context_text = (
             f"\n=== THIS WEEK'S PROCEEDINGS ({week_label}) — {week_count} uses of \"{phrase}\" ===\n"
             f"These are the speech turns from the most recent sitting week that contain the phrase.\n"
             f"USE THESE to write the opening paragraph: explain the current parliamentary context —\n"
             f"what debate, bill, or issue drove the use of this phrase this week.\n"
-            f"You may cite these turns with [W1], [W2], … markers.\n\n"
+            f"Cite these turns with their numbers [{week_offset+1}]–[{week_offset+len(week_bodies)}].\n\n"
             + "\n\n".join(week_lines)
             + "\n"
         )
@@ -1199,62 +1200,45 @@ TOP 5 SPEAKERS (all time):
 {turns_text}"""
 
 
-_BRACKET_RE = re.compile(r'\[(W?\d+(?:\s*,\s*W?\d+)*)\]')
+_BRACKET_RE = re.compile(r'\[(\d+(?:\s*,\s*\d+)*)\]')
 
 
 def apply_inline_citations(
     narrative_html: str,
-    bodies_for_claude: list[dict],
-    week_bodies: Optional[list] = None,
+    all_turns: list[dict],
 ) -> tuple[str, str]:
-    """Convert [N] and [WN] bracket citations in narrative HTML to superscript anchor links.
+    """Convert [N] bracket citations in narrative HTML to superscript anchor links.
 
-    [N]  — historical turns from bodies_for_claude (1-based index).
-    [WN] — current-week turns from week_bodies (1-based index).
+    all_turns is the unified list: historical turns first, then current-week turns,
+    all 1-based indexed in the same sequence used by the narrative and citation checker.
 
-    All citations share a single sequential display number ordered by first appearance.
     Returns (processed_html, references_html).
     """
-    # Shared sequential counter: key = ("h", turn_num) or ("w", turn_num)
-    seq_map: dict[tuple, int] = {}
+    seq_map: dict[int, int] = {}  # turn_num -> display seq
     counter = [0]
 
-    def _seq(key: tuple) -> int:
-        if key not in seq_map:
+    def _seq(turn_num: int) -> int:
+        if turn_num not in seq_map:
             counter[0] += 1
-            seq_map[key] = counter[0]
-        return seq_map[key]
+            seq_map[turn_num] = counter[0]
+        return seq_map[turn_num]
 
     def replace_citation(m: re.Match) -> str:
         raw_ids = [x.strip() for x in m.group(1).split(",")]
         sups = []
         for raw_id in raw_ids:
-            if raw_id.upper().startswith("W"):
-                try:
-                    turn_num = int(raw_id[1:])
-                except ValueError:
-                    continue
-                if not week_bodies or turn_num < 1 or turn_num > len(week_bodies):
-                    continue
-                seq = _seq(("w", turn_num))
-                sups.append(
-                    f'<sup class="cite" id="citeref-w{turn_num}">'
-                    f'<a href="#ref-w{turn_num}">{seq}</a>'
-                    f'</sup>'
-                )
-            else:
-                try:
-                    turn_num = int(raw_id)
-                except ValueError:
-                    continue
-                if turn_num < 1 or turn_num > len(bodies_for_claude):
-                    continue
-                seq = _seq(("h", turn_num))
-                sups.append(
-                    f'<sup class="cite" id="citeref-{turn_num}">'
-                    f'<a href="#ref-{turn_num}">{seq}</a>'
-                    f'</sup>'
-                )
+            try:
+                turn_num = int(raw_id)
+            except ValueError:
+                continue
+            if turn_num < 1 or turn_num > len(all_turns):
+                continue
+            seq = _seq(turn_num)
+            sups.append(
+                f'<sup class="cite" id="citeref-{turn_num}">'
+                f'<a href="#ref-{turn_num}">{seq}</a>'
+                f'</sup>'
+            )
         return "&#8202;".join(sups) if sups else m.group(0)
 
     processed = _BRACKET_RE.sub(replace_citation, narrative_html)
@@ -1267,52 +1251,34 @@ def apply_inline_citations(
         "house":  "House of Representatives",
     }
 
-    # Build reference list in display order (order of first appearance)
-    ref_entries: list[tuple[int, str]] = []  # (seq, html)
-
-    for (kind, turn_num), seq in seq_map.items():
-        if kind == "h":
-            idx = turn_num - 1
-            if 0 <= idx < len(bodies_for_claude):
-                body = bodies_for_claude[idx]
-                ch = chamber_label.get(body["chamber"].lower(), body["chamber"])
-                try:
-                    date_fmt = datetime.strptime(body["date"], "%Y-%m-%d").strftime("%-d %B %Y")
-                except (ValueError, AttributeError):
-                    date_fmt = body["date"]
-                url  = _aph_url(body["chamber"], body["date"])
-                link = (
-                    f' <a href="{url}" target="_blank" rel="noopener">[Hansard&#8599;]</a>'
-                    if url else ""
-                )
-                ref_entries.append((seq,
-                    f'<li id="ref-{turn_num}">'
-                    f'<span class="ref-num">{seq}.</span> '
-                    f'{body["speaker"]} ({body["party"]}), '
-                    f'<em>Parliamentary Debates ({ch})</em>, {date_fmt}.{link}'
-                    f'</li>'
-                ))
-        else:  # "w"
-            idx = turn_num - 1
-            if week_bodies and 0 <= idx < len(week_bodies):
-                wb  = week_bodies[idx]
-                ch  = chamber_label.get(str(wb.get("chamber", "")).lower(), wb.get("chamber", "Parliament"))
-                try:
-                    date_fmt = datetime.strptime(wb["date"], "%Y-%m-%d").strftime("%-d %B %Y")
-                except (ValueError, AttributeError, KeyError):
-                    date_fmt = wb.get("date", "")
-                url  = _aph_url(wb.get("chamber", ""), wb.get("date", ""))
-                link = (
-                    f' <a href="{url}" target="_blank" rel="noopener">[Hansard&#8599;]</a>'
-                    if url else ""
-                )
-                ref_entries.append((seq,
-                    f'<li id="ref-w{turn_num}">'
-                    f'<span class="ref-num">{seq}.</span> '
-                    f'{wb.get("name", "?")} ({wb.get("party", "?")}), '
-                    f'<em>Parliamentary Debates ({ch})</em>, {date_fmt}.{link}'
-                    f'</li>'
-                ))
+    ref_entries: list[tuple[int, str]] = []
+    for turn_num, seq in seq_map.items():
+        idx = turn_num - 1
+        if not (0 <= idx < len(all_turns)):
+            continue
+        t = all_turns[idx]
+        # Support both historical dict keys (speaker/chamber) and week dict keys (name/chamber)
+        speaker = t.get("speaker") or t.get("name", "?")
+        party   = t.get("party", "?")
+        chamber = t.get("chamber", "")
+        date_str = t.get("date", "")
+        ch = chamber_label.get(str(chamber).lower(), chamber)
+        try:
+            date_fmt = datetime.strptime(date_str, "%Y-%m-%d").strftime("%-d %B %Y")
+        except (ValueError, AttributeError):
+            date_fmt = date_str
+        url  = _aph_url(chamber, date_str)
+        link = (
+            f' <a href="{url}" target="_blank" rel="noopener">[Hansard&#8599;]</a>'
+            if url else ""
+        )
+        ref_entries.append((seq,
+            f'<li id="ref-{turn_num}">'
+            f'<span class="ref-num">{seq}.</span> '
+            f'<span class="citation-speaker">{speaker}</span> ({party}), '
+            f'<em>Parliamentary Debates ({ch})</em>, {date_fmt}.{link}'
+            f'</li>'
+        ))
 
     items = "".join(html for _, html in sorted(ref_entries))
     refs_html = (
@@ -1445,10 +1411,9 @@ def correct_citations(
 ) -> tuple[str, str, dict]:
     """Second-pass citation correction.
 
-    Checks [N] markers against bodies_for_claude (historical turns) and [WN] markers
-    against week_bodies (current-week turns, pre-selected via select_week_turns_for_context).
-    Also corrects speaker name misattributions in inline text and strips citation markers
-    from pipeline-derived statistics.
+    Uses a unified turn list: historical turns [1..N] followed by week_bodies [N+1..N+M].
+    Verifies [N] markers, corrects misattributions, adds missing citations for named speakers,
+    and strips citation markers from pipeline-derived statistics.
 
     Returns (corrected_narrative_html, summary, usage_dict).
     """
@@ -1457,7 +1422,7 @@ def correct_citations(
     if not narrative_html or not bodies_for_claude:
         return narrative_html, "", {}
 
-    # Build historical turn list [1], [2], …
+    # Build unified turn list [1], [2], … — historical first, then current-week
     turn_lines = []
     for i, body in enumerate(bodies_for_claude, 1):
         full_body = str(body.get("body", "")).strip().replace("\n", " ")
@@ -1465,58 +1430,60 @@ def correct_citations(
             f"[{i}] {body.get('speaker', '?')} ({body.get('party', '?')}),"
             f" {body.get('date', '?')} [{body.get('chamber', '?')}]: {full_body}"
         )
-    turns_text = "\n".join(turn_lines)
-
-    # Build current-week turn list [W1], [W2], … from pre-selected week_bodies list
-    week_text = ""
+    offset = len(bodies_for_claude)
     if week_bodies:
-        wlines = []
-        for i, wb in enumerate(week_bodies, 1):
+        for i, wb in enumerate(week_bodies, offset + 1):
             full_body = str(wb.get("body", "")).strip().replace("\n", " ")
-            wlines.append(
-                f"[W{i}] {wb.get('name', '?')} ({wb.get('party', '?')}),"
+            turn_lines.append(
+                f"[{i}] {wb.get('name', '?')} ({wb.get('party', '?')}),"
                 f" {wb.get('date', '?')} [{wb.get('chamber', '?')}]: {full_body}"
             )
-        week_text = "\n\n=== CURRENT-WEEK TURNS [W1], [W2], … ===\n" + "\n".join(wlines)
+    turns_text = "\n".join(turn_lines)
 
     system = (
         "You are a citation-accuracy editor for a parliamentary newsletter.\n\n"
         "You will be given:\n"
-        "  1. A narrative HTML document with [N] citation markers (historical turns) "
-        "and optionally [WN] markers (current-week turns).\n"
-        "  2. A numbered list of historical speech turns.\n"
-        "  3. (Optional) A numbered list of current-week speech turns prefixed W.\n\n"
+        "  1. A narrative HTML document with [N] citation markers.\n"
+        "  2. A unified numbered list of speech turns — historical turns first, "
+        "then current-week turns continuing the same sequence.\n\n"
         "YOUR TASKS — in order of priority:\n\n"
         "1. SPEAKER NAME CORRECTIONS (light text edits — highest priority):\n"
         "   If the inline text names a specific speaker but the cited turn belongs to a "
         "different speaker, correct the name in the inline text to match the actual speaker "
         "in that turn. This is the ONLY permitted text edit — change nothing else.\n\n"
         "2. CITATION MARKER CORRECTIONS:\n"
-        "   - If a [N] or [WN] marker cites the wrong turn, replace it with the correct number.\n"
-        "   - If no supplied turn supports the claim, remove the marker.\n"
-        "   - If a current-week claim has no [WN] marker but a matching week turn exists, "
-        "add the [WN] marker.\n\n"
-        "3. STATISTICS — never cited:\n"
-        "   Remove any [N] or [WN] marker attached to a pipeline-derived statistic: "
+        "   - If a [N] marker cites the wrong turn, replace it with the correct number.\n"
+        "   - If no supplied turn supports the claim, remove the marker.\n\n"
+        "3. ADD MISSING CITATIONS:\n"
+        "   If a sentence makes a specific attributable claim about a named speaker or "
+        "a specific speech — quoting them, paraphrasing their argument, or describing "
+        "what they said — and has no [N] marker, check whether a matching turn exists "
+        "and add the citation if found.\n"
+        "   Example of a substantive uncited claim that should receive a citation:\n"
+        "   'Senator Hodgins-May invoked it in a sharp attack on the gambling industry's "
+        "political influence, arguing that the harm caused by gambling demanded urgent "
+        "legislative action.' — this names a specific senator making a specific argument "
+        "and must be cited if a matching turn is in the provided list.\n\n"
+        "4. STATISTICS — never cited:\n"
+        "   Remove any [N] marker attached to a pipeline-derived statistic: "
         "total mention counts, year-by-year counts, rates per 10,000 turns, dataset "
         "highs/lows, or any figure from the statistics block. These cannot be attributed "
         "to individual speech turns.\n\n"
-        "4. DO NOT remove citations for claims that are accurate summaries of multiple turns "
+        "5. DO NOT remove citations for claims that are accurate summaries of multiple turns "
         "— if the claim is broadly supported by the cited turn(s) even as a synthesis, keep "
         "the citation. Only remove when the cited turn is genuinely irrelevant or wrong.\n\n"
         "Respond in exactly this format:\n"
         "<summary>\n"
         "Concise bullet list of every change, or 'No changes needed.'\n"
         "Format: [N] → [M] — reason | [N] removed — reason | "
-        "Speaker name corrected: 'X' → 'Y' at [N] — reason\n"
+        "citation added [N] — reason | Speaker name corrected: 'X' → 'Y' at [N] — reason\n"
         "</summary>\n"
         "<html>\n"
         "Complete corrected HTML with all changes applied.\n"
         "</html>"
     )
     user = (
-        f"=== HISTORICAL TURNS ===\n{turns_text}"
-        f"{week_text}\n\n"
+        f"=== SPEECH TURNS ===\n{turns_text}\n\n"
         f"=== NARRATIVE ===\n{narrative_html}"
     )
 
@@ -1934,10 +1901,15 @@ def _process_chamber_phrase(
                 print(f"    → citation-pass summary: {citation_summary[:120]}…", flush=True)
             print(f"    → citation-pass done (${cost2:.3f})", flush=True)
 
-    # Post-process inline [N] and [WN] citations → superscript links + reference list
+    # Post-process inline [N] citations → superscript links + reference list
+    # unified turn list: historical bodies first, then week_bodies (same ordering used by prompts)
     citations_html = ""
     if args.citations and narrative_html:
-        narrative_html, citations_html = apply_inline_citations(narrative_html, bodies, week_bodies=week_bodies)
+        all_turns = list(bodies) + [
+            {**wb, "speaker": wb.get("name", wb.get("speaker", "?"))}
+            for wb in (week_bodies or [])
+        ]
+        narrative_html, citations_html = apply_inline_citations(narrative_html, all_turns)
 
     return PhraseResult(
         phrase=phrase,
