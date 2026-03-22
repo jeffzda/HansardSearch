@@ -779,12 +779,11 @@ def _build_topic_calendar(phrase: str, matches_df: pd.DataFrame, max_rows: int =
         topics_df = topics_df.sort_values(["turns_that_day", "date_key", "order"],
                                           ascending=[False, True, True])
 
-        # Show up to 3 substantive topics per date so the researcher can see the
-        # actual legislative business without being limited to one arbitrarily chosen title
+        # Keep up to 5 substantive topics per date (by sitting-day order).
+        # 5 covers the main bill even when it appears mid-agenda, without flooding
+        # the researcher with unrelated debates that happen to fall on the same day.
         topics_df["_rank"] = topics_df.groupby("date_key").cumcount()
-        topics_df = topics_df[topics_df["_rank"] < 3]
-
-        # Deduplicate on (date, topic) then cap total rows
+        topics_df = topics_df[topics_df["_rank"] < 5]
         topics_df = topics_df.drop_duplicates(subset=["date_key", "topic"])
         rows = topics_df.head(max_rows)
 
