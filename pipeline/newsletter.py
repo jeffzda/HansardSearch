@@ -672,6 +672,90 @@ GOV_ERAS: dict[str, tuple[int, int]] = {
     "albanese": (2022, 2100),   # open-ended; 2100 as sentinel for "present"
 }
 
+# Paths to assembled debate topics parquets (used by _build_topic_calendar)
+_SENATE_TOPICS_PATH = Path(__file__).parent.parent / "data/output/senate/topics/senate_debate_topics.parquet"
+_HOUSE_TOPICS_PATH  = Path(__file__).parent.parent / "data/output/house/topics/house_debate_topics.parquet"
+
+
+def _build_topic_calendar(phrase: str, matches_df: pd.DataFrame, max_rows: int = 60) -> str:
+    """Build a keyword-filtered debate topic calendar for the researcher prompt.
+
+    Loads the assembled debate topics parquet(s) for the chamber(s) present in
+    matches_df, keyword-filters topic titles to those relevant to the phrase, and
+    returns a formatted table of (date | turns that day | topic title) sorted by
+    turns-that-day descending. Falls back gracefully on any file error.
+
+    The "turns that day" column lets the researcher calibrate debate_date estimates.
+    """
+    try:
+        # Derive keywords: strip boolean operators and short words from phrase
+        raw_keywords = re.sub(r"[|&!()'\"]+", " ", phrase).split()
+        keywords = [w.lower() for w in raw_keywords if len(w) >= 4]
+        if not keywords:
+            return "  (no keywords long enough to filter topics)"
+
+        # Per-day turn counts from matches_df (for calibration column)
+        # matches_df date column may be str or datetime.date
+        dates_series = pd.to_datetime(matches_df["date"], errors="coerce").dt.date
+        day_counts: dict = dates_series.value_counts().to_dict()
+
+        # Determine which chamber(s) are present
+        chambers = set(matches_df["chamber"].str.lower().unique()) if "chamber" in matches_df.columns else set()
+
+        topic_frames: list[pd.DataFrame] = []
+        for path, chamber_kw in [(_SENATE_TOPICS_PATH, "senate"), (_HOUSE_TOPICS_PATH, "house")]:
+            if chambers and not any(chamber_kw in c for c in chambers):
+                continue
+            if not path.exists():
+                continue
+            try:
+                df = pd.read_parquet(path, columns=["date", "level", "topic"])
+                # Only top-level topics (level 0) — sub-readings add noise
+                df = df[df["level"] == 0].copy()
+                topic_frames.append(df)
+            except Exception:
+                continue
+
+        if not topic_frames:
+            return "  (debate topics data not available)"
+
+        topics_df = pd.concat(topic_frames, ignore_index=True)
+
+        # Keyword filter on topic title: ALL keywords must appear (AND logic).
+        # This avoids broad matches on common words like "change" or "care".
+        mask = pd.Series(True, index=topics_df.index)
+        for kw in keywords:
+            mask &= topics_df["topic"].str.contains(re.escape(kw), case=False, na=False)
+        relevant = topics_df[mask].copy()
+
+        if relevant.empty:
+            return "  (no formally-titled debates matched the phrase keywords)"
+
+        # Convert date column to datetime.date for join with day_counts
+        relevant["date_key"] = pd.to_datetime(relevant["date"], errors="coerce").dt.date
+        relevant["turns_that_day"] = relevant["date_key"].map(day_counts).fillna(0).astype(int)
+
+        # Keep only dates that actually appear in matches_df; sort by turns desc
+        in_corpus = relevant[relevant["turns_that_day"] > 0].copy()
+        if in_corpus.empty:
+            # Fall back to all keyword-matched topics, sorted by date
+            in_corpus = relevant.sort_values("date_key")
+        else:
+            in_corpus = in_corpus.sort_values("turns_that_day", ascending=False)
+
+        # Deduplicate: one row per (date, topic) pair
+        in_corpus = in_corpus.drop_duplicates(subset=["date_key", "topic"])
+
+        rows = in_corpus.head(max_rows)
+        lines = [
+            f"  {row['date_key']} | {int(row['turns_that_day']):>4} turns | {row['topic']}"
+            for _, row in rows.iterrows()
+        ]
+        return "\n".join(lines) or "  (no relevant topic dates found in corpus)"
+
+    except Exception as exc:
+        return f"  (topic calendar unavailable: {exc})"
+
 
 def researcher_pass(
     phrase: str,
@@ -781,6 +865,12 @@ def researcher_pass(
     # Division turns total (for calibrating division_turns filter)
     division_turns_total = int(matches_df["div_flag"].astype(bool).sum())
 
+    # Debate topic calendar: find formally-titled debates relevant to this phrase.
+    # Uses keyword matching on topic titles — no speech-turn join required.
+    # Provides the researcher with the legislative timeline to correlate against
+    # its historical knowledge, and calibration data for debate_date filters.
+    topic_calendar_text = _build_topic_calendar(phrase, matches_df)
+
     # Per-state per-year counts (Senate only; for calibrating state_year filter)
     state_year_text = "(no state data — House corpus or state column absent)"
     if "state" in matches_df.columns:
@@ -843,6 +933,12 @@ Division turns (div_flag=1; on-record votes — use to calibrate division_turns 
 Per-state per-year activity (Senate only — use to calibrate state_year filter):
 {state_year_text}
 
+Formally-titled debates relevant to this phrase (date | turns that day | topic title).
+Use these to anchor your knowledge of key legislative moments to specific sitting dates.
+The "turns that day" column is the total phrase matches from that sitting day — use it
+to calibrate debate_date filter estimates:
+{topic_calendar_text}
+
 Top 40 speakers (name, party, total turns, [turn-type breakdown], per-year counts):
 {speakers_text}
 
@@ -869,7 +965,7 @@ INSTRUCTIONS:
    the crossbench and minor parties where they genuinely occurred. The goal is a filter
    that gives the writer enough material to tell a complete story — cause, response, and
    scrutiny — not a one-sided account of the loudest voice.
-3. Use the three additional metadata blocks to enrich your analysis:
+3. Use the additional metadata blocks to enrich your analysis:
 
    TURN TYPES — A speaker with high answer counts is responding at the despatch box and
    likely owns the policy; high question counts indicate a scrutineer or persistent critic;
@@ -893,6 +989,15 @@ INSTRUCTIONS:
    the issue long-term. Use this to identify which filters will capture each era, and to
    ensure your filter spans the full arc of the debate rather than a single party's peak.
 
+   DEBATE TOPIC CALENDAR — These are the formally-titled debate sections in Hansard that
+   are relevant to this phrase. Each row is a specific sitting date where parliament was
+   formally debating a topic related to this phrase. Use this as an anchor for your
+   historical knowledge: correlate the debate titles with key legislative events you know
+   about (second readings, committee reports, ministerial statements, votes), then use
+   debate_date filters to target the highest-signal sitting days directly. A sitting day
+   with many phrase matches and a directly relevant debate title is a high-confidence
+   signal that the writer will find substantive content there.
+
 4. Rank filter elements (speakers, year ranges, parties) in descending order of
    historical/political significance — not by mention count.
 5. Using the per-year counts in the metadata, estimate how many turns each element would
@@ -912,7 +1017,8 @@ Return JSON only — NO prose, no markdown fences, no explanation outside the ra
     {{"type": "speaker_year_type","value": {{"speaker": "<name>", "years": [<from>, <to>], "turn_type": "<type>"}}, "estimated_turns": <int>}},
     {{"type": "gov_era",          "value": "<pm_surname>",                            "estimated_turns": <int>}},
     {{"type": "division_turns",   "value": true,                                      "estimated_turns": <int>}},
-    {{"type": "state_year",       "value": {{"state": "<STATE_CODE>", "years": [<from>, <to>]}}, "estimated_turns": <int>}}
+    {{"type": "state_year",       "value": {{"state": "<STATE_CODE>", "years": [<from>, <to>]}}, "estimated_turns": <int>}},
+    {{"type": "debate_date",      "value": ["YYYY-MM-DD", ...],                       "estimated_turns": <int>}}
   ],
   "rationale": "<one paragraph — which politicians and periods are most significant and
     why, what the parliamentary story of this phrase is, and why these filters capture
@@ -952,6 +1058,14 @@ Rules:
   "answer", "interject". Use "answer" to target a minister defending at the despatch box
   (policy ownership); "statement" for long-form speeches (substantive debate); "question"
   for persistent scrutineers. Avoid "interject" — these are rarely substantive.
+- debate_date: value is a list of one or more ISO date strings (e.g. ["2011-11-08",
+  "2011-11-09"]). Selects all phrase-matching turns from those specific sitting days.
+  Use the "turns that day" column in the topic calendar to estimate how many turns each
+  date contributes. This is the most targeted filter available — use it for the most
+  historically significant single sitting days (e.g. when a landmark bill was read a
+  second time, when a committee report was tabled, when a PM made a major statement).
+  A single high-activity date can contribute as much as a broad year_range filter with
+  far greater precision.
 - Return [] for priority_filters only if you have no confident view on this topic at all
 """
 
@@ -1124,6 +1238,19 @@ def apply_researcher_filter(
                     st_mask = matches_df["state"].str.upper() == str(state).upper()
                     yr_mask = matches_df["year"].between(int(years[0]), int(years[1]))
                     mask |= (st_mask & yr_mask)
+
+        elif ftype == "debate_date":
+            # val is a list of ISO date strings e.g. ["2011-11-08", "2011-11-09"]
+            if isinstance(val, (list, tuple)):
+                date_col = pd.to_datetime(matches_df["date"], errors="coerce").dt.date
+                target_dates = set()
+                for d in val:
+                    try:
+                        target_dates.add(pd.to_datetime(str(d)).date())
+                    except Exception:
+                        pass
+                if target_dates:
+                    mask |= date_col.isin(target_dates)
 
     filtered = matches_df[mask]
     if len(filtered) < MIN_TURNS_AFTER_FILTER:
