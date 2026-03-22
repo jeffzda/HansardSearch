@@ -1169,6 +1169,8 @@ Your task is to write a compelling narrative history of how a particular phrase 
 
 FORMAT: Output only valid HTML using these tags: <h3>, <p>, <blockquote>, <p class="attribution">. No markdown. No bullet points. No tables. No headings other than <h3>. Write in flowing paragraphs.
 
+TITLE: Begin with a single <h3> containing a well-conceived, engaging natural language title for the piece — something that speaks to the political story the data tells, not a restatement of the search phrase. The search phrase is already displayed above the narrative. The title should work like a magazine article headline: evocative, specific, and grounded in the actual content (e.g. "The Endorsement Game: How the WWF Became Parliament's Environmental Currency" rather than "WWF in Parliament").
+
 TONE: Engaging narrative for an educated general public — like a high-quality political magazine, not a parliamentary report or academic paper. Name the politicians. Describe the moments of conflict. Show how the debate evolved. Maintain analytical distance: report what politicians said and argued, not what is true. Parliamentary debate is a record of claims, not a source of facts.
 
 CORPUS SCOPE: The data covers 1998–present. Do not treat 1998 as the origin of anything — it is simply where the data starts. Do not speculate about when a phrase "entered" political discourse unless you have genuine historical knowledge that makes it relevant and interesting.
