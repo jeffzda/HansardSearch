@@ -1490,6 +1490,7 @@ def inject_citation_popups(html: str, phrase: str = "") -> str:
 .pop-speaker{font-weight:700;color:#fabd2f;margin-bottom:3px}
 .pop-meta{font-size:11px;color:#928374;margin-bottom:10px}
 .pop-body{color:#d5c4a1;white-space:pre-wrap;word-break:break-word}
+.pop-body mark{background:#fabd2f;color:#1d2021;padding:0 1px;border-radius:2px}
 .pop-link{display:block;margin-bottom:4px;font-size:11px;color:#83a598;text-decoration:none}
 .pop-link:hover{text-decoration:underline}
 .pop-ctx-link{display:none;margin-bottom:10px;font-size:11px;color:#8ec07c;text-decoration:none}
@@ -1697,6 +1698,26 @@ color:#ebdbb2;overscroll-behavior:contain;scrollbar-color:#504945 #1d2021;scroll
   wireButtons(popup);
   wireButtons(overlay);
 
+  function _escHtml(s){
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function _escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+  var _hlTerms=(function(){
+    var terms=[];
+    var re=/'([^']+)'/g,m;
+    while((m=re.exec(newsletterPhrase))!==null)terms.push(m[1]);
+    return terms;
+  })();
+  function _highlightBody(text){
+    if(!_hlTerms.length)return _escHtml(text);
+    var out=_escHtml(text);
+    for(var i=0;i<_hlTerms.length;i++){
+      var r=new RegExp(_escRe(_escHtml(_hlTerms[i])),'gi');
+      out=out.replace(r,function(m){return '<mark>'+m+'</mark>';});
+    }
+    return out;
+  }
+
   async function populateContainer(container,sup){
     var spkEl=container.querySelector('.pop-speaker');
     var metEl=container.querySelector('.pop-meta');
@@ -1740,7 +1761,7 @@ color:#ebdbb2;overscroll-behavior:contain;scrollbar-color:#504945 #1d2021;scroll
         }).catch(function(){});
     }
     if(!url)return;
-    if(_cache[url]!==undefined){bodEl.textContent=_cache[url];return;}
+    if(_cache[url]!==undefined){bodEl.innerHTML=_highlightBody(_cache[url]);return;}
     try{
       var r=await fetch(url);
       if(!r.ok)throw r.status;
@@ -1748,7 +1769,7 @@ color:#ebdbb2;overscroll-behavior:contain;scrollbar-color:#504945 #1d2021;scroll
       var d=new DOMParser().parseFromString(t,'text/html');
       var b=(d.querySelector('.body')||{}).textContent||'';
       _cache[url]=b.trim();
-      bodEl.textContent=_cache[url];
+      bodEl.innerHTML=_highlightBody(_cache[url]);
     }catch(err){
       bodEl.textContent='(Could not load turn text)';
     }
@@ -2010,21 +2031,26 @@ def correct_citations(
         "   - If a [N] marker cites the wrong turn, replace it with the correct number.\n"
         "   - If no supplied turn supports the claim, remove the marker.\n\n"
         "3. ADD MISSING CITATIONS:\n"
-        "   If a sentence makes a specific attributable claim about a named speaker or "
-        "a specific speech — quoting them, paraphrasing their argument, or describing "
-        "what they said — and has no [N] marker, check whether a matching turn exists "
-        "and add the citation if found.\n"
-        "   Example of a substantive uncited claim that should receive a citation:\n"
-        "   'Senator Hodgins-May invoked it in a sharp attack on the gambling industry's "
-        "political influence, arguing that the harm caused by gambling demanded urgent "
-        "legislative action.' — this names a specific senator making a specific argument "
-        "and must be cited if a matching turn is in the provided list.\n"
-        "   Also scan for sentences that characterise what the phrase was used for in a "
-        "specific year or period — e.g. 'In the early years, references were largely "
-        "administrative…' or 'A spike in 2006 spanned debates from marine parks to "
-        "fisheries reform…' — these make attributable claims about the content of specific "
-        "speech turns. If matching turns exist from that period, add 1–3 representative "
-        "citations even when no politician is named.\n\n"
+        "   Read every sentence in the narrative that has no [N] marker. For each one, ask: "
+        "does this sentence make a claim that is attributable to the speech turn data — about "
+        "what was said, debated, argued, or characterised in parliament? If yes, find the 1–3 "
+        "turns from the provided list that best semantically match the claim and add those "
+        "citations. Use your judgement to identify the turns with the strongest signal: turns "
+        "that most directly evidence the claim, even if the match is one of topic/context rather "
+        "than a verbatim quote.\n"
+        "   This applies broadly — not just to sentences naming a specific politician, but also "
+        "to sentences that synthesise a period, describe a pattern, or characterise what the "
+        "phrase was used for in a given year or context. Examples of sentences that should "
+        "receive citations if matching turns exist:\n"
+        "   - 'In the early years, references were largely administrative' → cite early turns "
+        "that exemplify the administrative nature of references.\n"
+        "   - 'The 2002 spike coincided with battles over Regional Forest Agreements' → cite "
+        "2002 turns placing the phrase in the RFA context.\n"
+        "   - 'The most recent years show renewed intensity under the Albanese government's "
+        "nature-positive agenda' → cite recent turns showing that context.\n"
+        "   Do NOT add citations to pipeline-derived statistics (counts, rates, dataset highs/"
+        "lows — covered in rule 4). Every other attributable claim about the data is fair "
+        "game.\n\n"
         "4. STATISTICS — never cited:\n"
         "   Remove any [N] marker attached to a pipeline-derived statistic: "
         "total mention counts, year-by-year counts, rates per 10,000 turns, dataset "
