@@ -677,27 +677,68 @@ _SENATE_TOPICS_PATH = Path(__file__).parent.parent / "data/output/senate/topics/
 _HOUSE_TOPICS_PATH  = Path(__file__).parent.parent / "data/output/house/topics/house_debate_topics.parquet"
 
 
-def _build_topic_calendar(phrase: str, matches_df: pd.DataFrame, max_rows: int = 60) -> str:
-    """Build a keyword-filtered debate topic calendar for the researcher prompt.
+# Procedural topic patterns excluded from the debate topic calendar.
+# These appear on almost every sitting day and carry no legislative information.
+_PROCEDURAL_TOPIC_RE = re.compile(
+    r"^("
+    r"QUESTIONS\s+WITHOUT\s+NOTICE"
+    r"|QUESTIONS\s+TO\s+(MR|THE)\s+SPEAKER"
+    r"|NOTICE(S)?\s+OF\s+MOTION"
+    r"|COMMITTEE(S)?"
+    r"|CONDOLENCE(S)?"
+    r"|ORDER\s+OF\s+BUSINESS"
+    r"|PERSONAL\s+EXPLANATION(S)?"
+    r"|DOCUMENT(S)?"
+    r"|PETITION(S)?"
+    r"|ADJOURNMENT"
+    r"|STATEMENTS?\s+BY\s+MEMBER(S)?"
+    r"|ROUTINE\s+OF\s+BUSINESS"
+    r"|BUSINESS\s+OF\s+THE\s+(SENATE|HOUSE)"
+    r"|FORMAL\s+MOTION(S)?"
+    r"|MATTERS?\s+OF\s+PUBLIC\s+IMPORTANCE"
+    r"|PRIVILEGE"
+    r"|MINISTERIAL\s+ARRANGEMENT(S)?"
+    r"|LEAVE\s+OF\s+ABSENCE"
+    r"|VALEDICTORY"
+    r"|APPROPRIATION\s+BILL"
+    r"|BUDGET"
+    r"|SENATE\s+ESTIMATES"
+    r"|ESTIMATES\s+COMMITTEE"
+    r"|^BUSINESS$"
+    r"|^NOTICES$"
+    r"|^BILLS$"
+    r"|^MOTIONS$"
+    r"|^DISTINGUISHED\s+VISITOR(S)?$"
+    r"|^PARLIAMENTARY\s+REPRESENTATION$"
+    r"|^ANSWERS\s+TO\s+QUESTIONS"
+    r"|^MINISTERIAL\s+STATEMENTS?$"
+    r"|^QUESTIONS\s+ON\s+NOTICE$"
+    r")",
+    re.IGNORECASE,
+)
 
-    Loads the assembled debate topics parquet(s) for the chamber(s) present in
-    matches_df, keyword-filters topic titles to those relevant to the phrase, and
-    returns a formatted table of (date | turns that day | topic title) sorted by
-    turns-that-day descending. Falls back gracefully on any file error.
+
+def _build_topic_calendar(phrase: str, matches_df: pd.DataFrame, max_rows: int = 60) -> str:
+    """Build a debate topic calendar for the researcher prompt.
+
+    For each sitting day in matches_df, loads the most prominent substantive debate
+    topic(s) from the assembled topics parquets and returns a formatted table of
+    (date | turns that day | topic title) sorted by turns-that-day descending.
+
+    Procedural headings (Questions Without Notice, Committees, etc.) are stripped
+    so the researcher only sees substantive topics. The researcher judges relevance
+    from the title — no keyword matching against the phrase is applied, so bills and
+    inquiries with their own formal names (e.g. CPRS, Clean Energy Act) are visible
+    even when the phrase doesn't appear in the title.
 
     The "turns that day" column lets the researcher calibrate debate_date estimates.
     """
     try:
-        # Derive keywords: strip boolean operators and short words from phrase
-        raw_keywords = re.sub(r"[|&!()'\"]+", " ", phrase).split()
-        keywords = [w.lower() for w in raw_keywords if len(w) >= 4]
-        if not keywords:
-            return "  (no keywords long enough to filter topics)"
-
         # Per-day turn counts from matches_df (for calibration column)
-        # matches_df date column may be str or datetime.date
         dates_series = pd.to_datetime(matches_df["date"], errors="coerce").dt.date
         day_counts: dict = dates_series.value_counts().to_dict()
+        if not day_counts:
+            return "  (no dated turns in corpus)"
 
         # Determine which chamber(s) are present
         chambers = set(matches_df["chamber"].str.lower().unique()) if "chamber" in matches_df.columns else set()
@@ -709,8 +750,7 @@ def _build_topic_calendar(phrase: str, matches_df: pd.DataFrame, max_rows: int =
             if not path.exists():
                 continue
             try:
-                df = pd.read_parquet(path, columns=["date", "level", "topic"])
-                # Only top-level topics (level 0) — sub-readings add noise
+                df = pd.read_parquet(path, columns=["date", "order", "level", "topic"])
                 df = df[df["level"] == 0].copy()
                 topic_frames.append(df)
             except Exception:
@@ -721,37 +761,38 @@ def _build_topic_calendar(phrase: str, matches_df: pd.DataFrame, max_rows: int =
 
         topics_df = pd.concat(topic_frames, ignore_index=True)
 
-        # Keyword filter on topic title: ALL keywords must appear (AND logic).
-        # This avoids broad matches on common words like "change" or "care".
-        mask = pd.Series(True, index=topics_df.index)
-        for kw in keywords:
-            mask &= topics_df["topic"].str.contains(re.escape(kw), case=False, na=False)
-        relevant = topics_df[mask].copy()
+        # Strip procedural headings
+        procedural_mask = topics_df["topic"].apply(
+            lambda t: bool(_PROCEDURAL_TOPIC_RE.match(str(t))) if pd.notna(t) else False
+        )
+        topics_df = topics_df[~procedural_mask].copy()
 
-        if relevant.empty:
-            return "  (no formally-titled debates matched the phrase keywords)"
+        # Convert date; restrict to dates that appear in matches_df
+        topics_df["date_key"] = pd.to_datetime(topics_df["date"], errors="coerce").dt.date
+        topics_df = topics_df[topics_df["date_key"].isin(day_counts)].copy()
 
-        # Convert date column to datetime.date for join with day_counts
-        relevant["date_key"] = pd.to_datetime(relevant["date"], errors="coerce").dt.date
-        relevant["turns_that_day"] = relevant["date_key"].map(day_counts).fillna(0).astype(int)
+        if topics_df.empty:
+            return "  (no substantive debate topics found for corpus dates)"
 
-        # Keep only dates that actually appear in matches_df; sort by turns desc
-        in_corpus = relevant[relevant["turns_that_day"] > 0].copy()
-        if in_corpus.empty:
-            # Fall back to all keyword-matched topics, sorted by date
-            in_corpus = relevant.sort_values("date_key")
-        else:
-            in_corpus = in_corpus.sort_values("turns_that_day", ascending=False)
+        # Attach turn counts; sort dates by activity then topics by sitting-day order
+        topics_df["turns_that_day"] = topics_df["date_key"].map(day_counts).fillna(0).astype(int)
+        topics_df = topics_df.sort_values(["turns_that_day", "date_key", "order"],
+                                          ascending=[False, True, True])
 
-        # Deduplicate: one row per (date, topic) pair
-        in_corpus = in_corpus.drop_duplicates(subset=["date_key", "topic"])
+        # Show up to 3 substantive topics per date so the researcher can see the
+        # actual legislative business without being limited to one arbitrarily chosen title
+        topics_df["_rank"] = topics_df.groupby("date_key").cumcount()
+        topics_df = topics_df[topics_df["_rank"] < 3]
 
-        rows = in_corpus.head(max_rows)
+        # Deduplicate on (date, topic) then cap total rows
+        topics_df = topics_df.drop_duplicates(subset=["date_key", "topic"])
+        rows = topics_df.head(max_rows)
+
         lines = [
             f"  {row['date_key']} | {int(row['turns_that_day']):>4} turns | {row['topic']}"
             for _, row in rows.iterrows()
         ]
-        return "\n".join(lines) or "  (no relevant topic dates found in corpus)"
+        return "\n".join(lines) or "  (no topic calendar rows produced)"
 
     except Exception as exc:
         return f"  (topic calendar unavailable: {exc})"
@@ -933,10 +974,13 @@ Division turns (div_flag=1; on-record votes — use to calibrate division_turns 
 Per-state per-year activity (Senate only — use to calibrate state_year filter):
 {state_year_text}
 
-Formally-titled debates relevant to this phrase (date | turns that day | topic title).
-Use these to anchor your knowledge of key legislative moments to specific sitting dates.
-The "turns that day" column is the total phrase matches from that sitting day — use it
-to calibrate debate_date filter estimates:
+Substantive debate topics for the most active sitting days in this corpus
+(date | turns that day | most prominent topic on that day).
+Procedural headings (Questions Without Notice, Committees, etc.) have been removed.
+Use these to correlate sitting days with your knowledge of key legislative events —
+the topic titles use the formal bill/inquiry names, not the phrase itself, so you will
+see entries like "CARBON POLLUTION REDUCTION SCHEME BILL" for a climate change corpus.
+The "turns that day" column calibrates debate_date filter estimates:
 {topic_calendar_text}
 
 Top 40 speakers (name, party, total turns, [turn-type breakdown], per-year counts):
