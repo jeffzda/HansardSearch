@@ -649,6 +649,526 @@ def _df_matches_phrase(df: pd.DataFrame, phrase: str) -> pd.DataFrame:
             return df[bodies.str.contains(pat, na=False)].copy()
 
 
+WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search"}
+
+# Approximate training data cutoff for the researcher model.
+# Update this if the model changes. Used to define the web-search date window.
+RESEARCHER_TRAINING_CUTOFF = "August 2025"
+
+MIN_TURNS_AFTER_FILTER = 50   # safety floor: never filter below this count
+
+# Australian federal government eras (by PM surname) used for gov_era filter.
+# Keys are lowercase — researcher uses e.g. "howard", "gillard", "albanese".
+# Values are (first_year, last_year) inclusive at year granularity.
+GOV_ERAS: dict[str, tuple[int, int]] = {
+    "howard":   (1996, 2007),
+    "rudd":     (2007, 2010),   # includes both Rudd terms (2007–10, 2013)
+    "rudd1":    (2007, 2010),
+    "gillard":  (2010, 2013),
+    "rudd2":    (2013, 2013),
+    "abbott":   (2013, 2015),
+    "turnbull": (2015, 2018),
+    "morrison": (2018, 2022),
+    "albanese": (2022, 2100),   # open-ended; 2100 as sentinel for "present"
+}
+
+
+def researcher_pass(
+    phrase: str,
+    matches_df: pd.DataFrame,
+    client,
+    model: str,
+    max_turns: int,
+) -> Optional["ResearcherFilter"]:
+    """Call Claude to produce a prioritised filter spec for a large corpus phrase.
+
+    The researcher receives only compact metadata (per-speaker/per-year counts, party
+    totals, chamber split, spike years, corpus size, target size). It uses its political
+    knowledge — supplemented by web search for post-training-cutoff events — to return
+    a prioritised list of filter elements calibrated to reduce the corpus to ~max_turns
+    high-signal turns.
+
+    Returns None on any failure so callers fall back to the full corpus.
+    """
+    total_turns = len(matches_df)
+    first_year  = int(matches_df["year"].min())
+    last_year   = int(matches_df["year"].max())
+    spike_years = [s["year"] for s in detect_spikes(matches_df)]
+
+    year_counts = matches_df["year"].value_counts().sort_index().to_dict()
+
+    # Per-speaker: total turns + turn-type breakdown + per-year breakdown (top 40)
+    non_presiding = matches_df[~matches_df["name_id"].astype(str).isin(["10000"])]
+    speaker_rows: list[dict] = []
+    for (name, party), grp in non_presiding.groupby(["name", "party"]):
+        yr_counts_spk = grp.groupby("year").size().sort_index()
+        yr_str = " ".join(f"{int(y)}({int(c)})" for y, c in yr_counts_spk.items())
+        q_flag  = grp["question"].astype(bool)
+        a_flag  = grp["answer"].astype(bool)
+        i_flag  = grp["interject"].astype(bool)
+        n_stmt  = int((~q_flag & ~a_flag & ~i_flag).sum())
+        n_q     = int(q_flag.sum())
+        n_a     = int(a_flag.sum())
+        n_i     = int(i_flag.sum())
+        type_str = f"stmt:{n_stmt} q:{n_q} ans:{n_a} int:{n_i}"
+        speaker_rows.append({
+            "name":    str(name),
+            "party":   str(party),
+            "total":   len(grp),
+            "types":   type_str,
+            "detail":  yr_str,
+        })
+    speaker_rows.sort(key=lambda r: r["total"], reverse=True)
+    speakers_text = "\n".join(
+        f"  {r['name']} ({r['party']}): {r['total']} turns [{r['types']}] | {r['detail']}"
+        for r in speaker_rows[:40]
+    )
+
+    party_totals = non_presiding.groupby("party").size().nlargest(10).to_dict()
+    chamber_split = matches_df["chamber"].value_counts().to_dict()
+    gov_split = {
+        "in_government": int((matches_df["in_gov"] == 1).sum()),
+        "opposition":    int((matches_df["in_gov"] == 0).sum()),
+    }
+
+    # Turn type breakdown: statements vs questions vs answers vs interjections
+    type_breakdown = {
+        "statements":    int((~matches_df["question"].astype(bool) & ~matches_df["answer"].astype(bool) & ~matches_df["interject"].astype(bool)).sum()),
+        "questions":     int(matches_df["question"].astype(bool).sum()),
+        "answers":       int(matches_df["answer"].astype(bool).sum()),
+        "interjections": int(matches_df["interject"].astype(bool).sum()),
+    }
+
+    # Top 3 speakers within each spike year (to surface who drove landmark moments)
+    spike_speakers: dict[int, list[str]] = {}
+    for yr in spike_years:
+        yr_df = non_presiding[non_presiding["year"] == yr]
+        top = (
+            yr_df.groupby("name").size()
+            .nlargest(3)
+            .reset_index(name="count")
+        )
+        spike_speakers[yr] = [
+            f"{row['name']} ({int(row['count'])})"
+            for _, row in top.iterrows()
+        ]
+
+    spike_speakers_text = "\n".join(
+        f"  {yr}: {', '.join(names)}"
+        for yr, names in sorted(spike_speakers.items())
+    ) or "  (no spike years)"
+
+    # Per-party per-year matrix: shows which party owned each era of the debate
+    party_year = (
+        non_presiding.groupby(["party", "year"]).size()
+        .unstack(fill_value=0)
+    )
+    # Keep only top 6 parties by total; show years with any activity
+    top_parties = non_presiding.groupby("party").size().nlargest(6).index
+    party_year = party_year.loc[party_year.index.isin(top_parties)]
+    party_year_lines: list[str] = []
+    for party in party_year.index:
+        active = {
+            int(yr): int(cnt)
+            for yr, cnt in party_year.loc[party].items()
+            if cnt > 0
+        }
+        if active:
+            yr_str = " ".join(f"{y}({c})" for y, c in sorted(active.items()))
+            party_year_lines.append(f"  {party}: {yr_str}")
+    party_year_text = "\n".join(party_year_lines) or "  (no data)"
+
+    now = datetime.now()
+    current_date_str = now.strftime("%-d %B %Y")   # e.g. "22 March 2026"
+    prompt = f"""You are an expert on Australian federal political history (1998–present).
+
+Today's date is {current_date_str}. Your training data extends to approximately
+{RESEARCHER_TRAINING_CUTOFF}. The Hansard corpus spans 1998 to {now.year} — treat
+{current_date_str} as the present, not your training cutoff. The phrase "{phrase}"
+appears in {total_turns:,} speech turns and was first recorded in {first_year} (most
+recent: {last_year}).
+
+Your task: identify the politicians, time periods, and (optionally) parties most central
+to the parliamentary story of "{phrase}", and return a prioritised list of filter elements
+calibrated so their estimated combined coverage reaches approximately {max_turns} turns.
+
+CORPUS STATISTICS (use these to calibrate your estimated_turns values):
+
+Annual mention counts: {dict(year_counts)}
+Statistical spike years (>2× mean): {spike_years}
+Chamber split: {chamber_split}
+Government vs opposition: {gov_split}
+Party totals (top 10): {dict(party_totals)}
+
+Turn types (statements are substantive speeches; questions indicate scrutiny;
+answers indicate policy ownership; interjections are mostly noise):
+  {type_breakdown}
+
+Top speakers within each spike year (use to identify who drove landmark moments):
+{spike_speakers_text}
+
+Per-party per-year activity (use to identify which party owned each era of the debate,
+and to distinguish between government-side policy architects and opposition attackers):
+{party_year_text}
+
+Top 40 speakers (name, party, total turns, per-year breakdown):
+{speakers_text}
+
+INSTRUCTIONS:
+1. Use your knowledge of Australian political history to identify the most politically
+   significant contributors to parliamentary debate on "{phrase}". For events between
+   {RESEARCHER_TRAINING_CUTOFF} and {current_date_str} — the period after your training
+   data ends — you MUST use web search: search for Australian parliamentary debates,
+   legislation, or political events involving this phrase during that window. Do not rely
+   on inference or guesswork for this period; search explicitly. Draw on balanced, factual
+   historical sources: Hansard record, APH biographical database, reputable journalism,
+   and academic sources. Prefer primary-source references (e.g. APH, ABS, AIHW) over
+   opinion sources.
+2. Represent the actual political landscape of the debate proportionally — but proportional
+   to the STORY, not to raw mention counts. A term may be used most frequently as an attack
+   phrase by one side, but the parliamentary story always requires both the attackers and
+   the people or policy being attacked. If a phrase was weaponised against a government
+   policy (e.g. "carbon tax" used overwhelmingly as a Coalition attack), the ministers who
+   introduced and defended that policy are as central to the story as the opposition leaders
+   who attacked it — even though they may have used the phrase less. Your filter must
+   always include representation from both the driving force behind a policy and its
+   principal opponents. Do not interpret a skewed mention-count distribution as permission
+   to filter to one side only. Similarly, actively look for meaningful contributions from
+   the crossbench and minor parties where they genuinely occurred. The goal is a filter
+   that gives the writer enough material to tell a complete story — cause, response, and
+   scrutiny — not a one-sided account of the loudest voice.
+3. Use the three additional metadata blocks to enrich your analysis:
+
+   TURN TYPES — A speaker with high answer counts is responding at the despatch box and
+   likely owns the policy; high question counts indicate a scrutineer or persistent critic;
+   interjections are mostly noise and should be discounted. A corpus dominated by answers
+   (government defending) looks different from one dominated by statements (opposition
+   attacking). Use this to identify the nature of the debate — who was accountable versus
+   who was attacking — and to surface policy architects who may have lower raw counts than
+   their opponents.
+
+   TOP SPEAKERS PER SPIKE YEAR — These are the people who drove the most significant
+   moments in the corpus. Cross-reference them against your historical knowledge to
+   confirm whether those moments correspond to real legislative events, inquiries, or
+   crises. A speaker appearing at the top of a spike year you can identify as a landmark
+   moment should be prioritised; a speaker dominating a spike year you cannot explain
+   should prompt a web search.
+
+   PER-PARTY PER-YEAR MATRIX — Read this as the political history of the debate. Where
+   one party's activity rises sharply, a policy shift, election, or legislative moment
+   occurred. Where two parties' activity peaks overlap, that is the contested centre of
+   the debate. Where activity is spread across many years for one party, that party owned
+   the issue long-term. Use this to identify which filters will capture each era, and to
+   ensure your filter spans the full arc of the debate rather than a single party's peak.
+
+4. Rank filter elements (speakers, year ranges, parties) in descending order of
+   historical/political significance — not by mention count.
+5. Using the per-year counts in the metadata, estimate how many turns each element would
+   add to the filter (OR logic: each new element adds turns not already captured by prior
+   elements in the list).
+6. Add elements in that order, accumulating estimated_turns, until the running total is
+   within or close to {max_turns}.
+
+Return JSON only — NO prose, no markdown fences, no explanation outside the rationale field:
+{{
+  "priority_filters": [
+    {{"type": "speaker",          "value": "<partial name or surname>",               "estimated_turns": <int>}},
+    {{"type": "year_range",       "value": [<from_year>, <to_year>],                  "estimated_turns": <int>}},
+    {{"type": "party",            "value": "<PARTY_CODE>",                            "estimated_turns": <int>}},
+    {{"type": "speaker_year",     "value": {{"speaker": "<name>", "years": [<from>, <to>]}}, "estimated_turns": <int>}},
+    {{"type": "speaker_type",     "value": {{"speaker": "<name>", "turn_type": "<type>"}},   "estimated_turns": <int>}},
+    {{"type": "speaker_year_type","value": {{"speaker": "<name>", "years": [<from>, <to>], "turn_type": "<type>"}}, "estimated_turns": <int>}},
+    {{"type": "gov_era",          "value": "<pm_surname>",                            "estimated_turns": <int>}},
+    {{"type": "division_turns",   "value": true,                                      "estimated_turns": <int>}},
+    {{"type": "state_year",       "value": {{"state": "<STATE_CODE>", "years": [<from>, <to>]}}, "estimated_turns": <int>}}
+  ],
+  "rationale": "<one paragraph — which politicians and periods are most significant and
+    why, what the parliamentary story of this phrase is, and why these filters capture
+    the high-signal turns>"
+}}
+
+Rules:
+- type must be one of: "speaker", "year_range", "party", "speaker_year", "speaker_type",
+  "speaker_year_type", "gov_era", "division_turns", "state_year"
+- speaker / speaker_year / speaker_type / speaker_year_type:
+  Speaker values are case-insensitive substrings matched against the name column. A value
+  of "WONG" will match any speaker whose name contains "WONG". The actual filtered count
+  will always exceed your estimate because the same speaker appears under multiple name
+  variants in Hansard formatting. Treat estimated_turns as a conservative lower bound.
+  Use compound types (speaker_year, speaker_year_type) when you want a specific person's
+  turns during a specific legislative period, not their entire corpus. This is the most
+  precise filter available — use it when a person's significance is concentrated in a
+  known period.
+- year_range: value is [from, to] inclusive; use [year, year] for a single year. Year
+  ranges are exact — prefer them over speaker-only filters where the story is structured
+  around events or legislative moments. They don't suffer from the name-variant inflation.
+- party: value must match corpus party codes exactly (e.g. "ALP", "LP", "AG", "NP", "GRN").
+- gov_era: value is a PM surname in lowercase (e.g. "howard", "gillard", "albanese"). This
+  selects all turns that occurred during that government's term. Available values: howard
+  (1996–2007), rudd1 (2007–2010), gillard (2010–2013), rudd2 (2013), abbott (2013–2015),
+  turnbull (2015–2018), morrison (2018–2022), albanese (2022–present). Use "rudd" to cover
+  both Rudd terms. Prefer gov_era over year_range when you want to capture policy ownership
+  across a full government term regardless of when within that term the phrase peaked.
+- division_turns: value must be true (boolean). Selects turns flagged as part of a division
+  vote — these are the most committed, on-record statements. Use sparingly as a supplement
+  when the topic has strong voting history that would be illustrative.
+- state_year: value is {{"state": "<STATE_CODE>", "years": [from, to]}}. Senate only — selects
+  senators from that state within the year range. State codes: NSW, VIC, QLD, WA, SA, TAS,
+  ACT, NT. Use when the topic has a strong state-based dimension (e.g. resources policy in
+  WA, live exports in WA/QLD, water rights in NSW/VIC/SA).
+- turn_type (used in speaker_type and speaker_year_type): one of "statement", "question",
+  "answer", "interject". Use "answer" to target a minister defending at the despatch box
+  (policy ownership); "statement" for long-form speeches (substantive debate); "question"
+  for persistent scrutineers. Avoid "interject" — these are rarely substantive.
+- Return [] for priority_filters only if you have no confident view on this topic at all
+"""
+
+    try:
+        messages: list[dict] = [{"role": "user", "content": prompt}]
+        final_text = ""
+        total_usage: dict = {"input_tokens": 0, "output_tokens": 0}
+
+        last_stop_reason = None
+        for iteration in range(15):  # safety cap — web search can need many rounds
+            resp = client.messages.create(
+                model=model,
+                max_tokens=2048,
+                temperature=0,
+                tools=[WEB_SEARCH_TOOL],
+                messages=messages,
+            )
+            total_usage["input_tokens"]  += getattr(resp.usage, "input_tokens",  0)
+            total_usage["output_tokens"] += getattr(resp.usage, "output_tokens", 0)
+            last_stop_reason = resp.stop_reason
+
+            for block in resp.content:
+                if hasattr(block, "text"):
+                    final_text = block.text
+
+            if resp.stop_reason == "end_turn":
+                # Preserve final assistant turn so the review pass can continue the session
+                messages.append({"role": "assistant", "content": resp.content})
+                break
+
+            if resp.stop_reason == "tool_use":
+                messages.append({"role": "assistant", "content": resp.content})
+                tool_results = [
+                    {"type": "tool_result", "tool_use_id": block.id, "content": ""}
+                    for block in resp.content
+                    if getattr(block, "type", None) == "tool_use"
+                ]
+                if tool_results:
+                    messages.append({"role": "user", "content": tool_results})
+            else:
+                break
+        else:
+            # Loop hit the iteration cap without reaching end_turn
+            print(
+                f"    [researcher] hit iteration cap ({last_stop_reason}), "
+                "using whatever text was collected",
+                flush=True,
+            )
+
+        if not final_text:
+            print("    [researcher] empty response, using full corpus", flush=True)
+            return None
+
+        json_match = re.search(r'\{.*\}', final_text, re.DOTALL)
+        if not json_match:
+            print("    [researcher] no JSON in response, using full corpus", flush=True)
+            return None
+
+        data = json.loads(json_match.group())
+        return ResearcherFilter(
+            priority_filters=data.get("priority_filters", []),
+            rationale=data.get("rationale", ""),
+            usage=total_usage,
+            messages=messages,
+        )
+
+    except Exception as exc:
+        print(f"    [researcher] failed ({exc}), using full corpus", flush=True)
+        return None
+
+
+def _turn_type_mask(df: pd.DataFrame, turn_type: str) -> "pd.Series[bool]":
+    """Return a boolean mask selecting turns of the specified type."""
+    tt = str(turn_type).lower()
+    q = df["question"].astype(bool)
+    a = df["answer"].astype(bool)
+    i = df["interject"].astype(bool)
+    if tt == "statement":
+        return ~q & ~a & ~i
+    elif tt == "question":
+        return q
+    elif tt == "answer":
+        return a
+    elif tt == "interject":
+        return i
+    return pd.Series(True, index=df.index)   # unknown type → no restriction
+
+
+def apply_researcher_filter(
+    matches_df: pd.DataFrame,
+    rf: "ResearcherFilter",
+    max_turns: int,
+) -> pd.DataFrame:
+    """Apply researcher priority filters (OR logic) to matches_df.
+
+    All elements are applied at once — the researcher has already calibrated the set
+    to target max_turns. Safety: if result < MIN_TURNS_AFTER_FILTER, returns full df.
+
+    Supported filter types:
+      speaker          — name substring match
+      year_range       — inclusive year range
+      party            — exact party code
+      speaker_year     — speaker substring AND year range
+      speaker_type     — speaker substring AND turn type (statement/question/answer/interject)
+      speaker_year_type — all three combined
+      gov_era          — PM surname → year range via GOV_ERAS lookup
+      division_turns   — div_flag == 1
+      state_year       — state code AND year range (Senate only)
+    """
+    if not rf.priority_filters:
+        return matches_df
+
+    mask = pd.Series(False, index=matches_df.index)
+    for f in rf.priority_filters:
+        ftype = f.get("type")
+        val   = f.get("value")
+
+        if ftype == "speaker":
+            mask |= matches_df["name"].str.contains(str(val), case=False, na=False)
+
+        elif ftype == "year_range" and isinstance(val, (list, tuple)) and len(val) == 2:
+            mask |= matches_df["year"].between(int(val[0]), int(val[1]))
+
+        elif ftype == "party":
+            mask |= matches_df["party"] == str(val)
+
+        elif ftype == "speaker_year" and isinstance(val, dict):
+            spk   = val.get("speaker", "")
+            years = val.get("years", [])
+            if spk and isinstance(years, (list, tuple)) and len(years) == 2:
+                spk_mask = matches_df["name"].str.contains(str(spk), case=False, na=False)
+                yr_mask  = matches_df["year"].between(int(years[0]), int(years[1]))
+                mask |= (spk_mask & yr_mask)
+
+        elif ftype == "speaker_type" and isinstance(val, dict):
+            spk  = val.get("speaker", "")
+            ttype = val.get("turn_type", "")
+            if spk:
+                spk_mask = matches_df["name"].str.contains(str(spk), case=False, na=False)
+                tt_mask  = _turn_type_mask(matches_df, ttype)
+                mask |= (spk_mask & tt_mask)
+
+        elif ftype == "speaker_year_type" and isinstance(val, dict):
+            spk   = val.get("speaker", "")
+            years = val.get("years", [])
+            ttype = val.get("turn_type", "")
+            if spk and isinstance(years, (list, tuple)) and len(years) == 2:
+                spk_mask = matches_df["name"].str.contains(str(spk), case=False, na=False)
+                yr_mask  = matches_df["year"].between(int(years[0]), int(years[1]))
+                tt_mask  = _turn_type_mask(matches_df, ttype)
+                mask |= (spk_mask & yr_mask & tt_mask)
+
+        elif ftype == "gov_era":
+            era = str(val).lower()
+            if era in GOV_ERAS:
+                y_from, y_to = GOV_ERAS[era]
+                # Cap y_to at the actual last year in the corpus
+                y_to_capped = min(y_to, int(matches_df["year"].max()))
+                mask |= matches_df["year"].between(y_from, y_to_capped)
+
+        elif ftype == "division_turns":
+            if val is True or str(val).lower() in ("true", "1", "yes"):
+                mask |= matches_df["div_flag"].astype(bool)
+
+        elif ftype == "state_year" and isinstance(val, dict):
+            state = val.get("state", "")
+            years = val.get("years", [])
+            if state and isinstance(years, (list, tuple)) and len(years) == 2:
+                if "state" in matches_df.columns:
+                    st_mask = matches_df["state"].str.upper() == str(state).upper()
+                    yr_mask = matches_df["year"].between(int(years[0]), int(years[1]))
+                    mask |= (st_mask & yr_mask)
+
+    filtered = matches_df[mask]
+    if len(filtered) < MIN_TURNS_AFTER_FILTER:
+        print(
+            f"    [researcher] filter too narrow ({len(filtered)} turns < {MIN_TURNS_AFTER_FILTER}), "
+            "using full corpus",
+            flush=True,
+        )
+        return matches_df
+
+    print(
+        f"    [researcher] corpus reduced {len(matches_df):,} → {len(filtered):,} turns "
+        f"(target ≈{max_turns})",
+        flush=True,
+    )
+    return filtered
+
+
+def researcher_review(
+    rf: "ResearcherFilter",
+    phrase: str,
+    narrative_html: str,
+    client,
+    model: str,
+) -> dict:
+    """Second researcher pass: score the completed narrative using the preserved session.
+
+    Continues the researcher's conversation (which retains its web-search context and
+    filter rationale) and asks it to assess the finished narrative against its knowledge
+    of the topic's parliamentary history from 1998 to present.
+
+    Returns {"score": int, "assessment": str, "usage": dict} or {} on failure.
+    """
+    # Strip HTML tags to reduce tokens — the researcher needs the text, not the markup
+    import html as _html
+    clean = re.sub(r'<[^>]+>', ' ', narrative_html)
+    clean = re.sub(r'\s+', ' ', _html.unescape(clean)).strip()
+
+    review_prompt = (
+        f'The newsletter narrative for the phrase "{phrase}" has now been written. '
+        f'Please read it and assess how well it represents the full parliamentary history '
+        f'of this topic from 1998 to the present, drawing on your research knowledge.\n\n'
+        f'NARRATIVE TEXT:\n{clean}\n\n'
+        f'Respond with JSON only — no prose outside the assessment field:\n'
+        f'{{"score": <int 1-10>, '
+        f'"assessment": "<one paragraph: what the narrative covers well, '
+        f'what periods, voices, or aspects of the history are underrepresented or missing, '
+        f'and what the score reflects>"}}'
+    )
+
+    messages = list(rf.messages) + [{"role": "user", "content": review_prompt}]
+    try:
+        resp = client.messages.create(
+            model=model,
+            max_tokens=1024,
+            temperature=0,
+            messages=messages,
+        )
+        usage = {
+            "input_tokens":  getattr(resp.usage, "input_tokens",  0),
+            "output_tokens": getattr(resp.usage, "output_tokens", 0),
+        }
+        text = next((b.text for b in resp.content if hasattr(b, "text")), "")
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if not json_match:
+            return {}
+        data = json.loads(json_match.group())
+        return {
+            "score":      int(data.get("score", 0)),
+            "assessment": str(data.get("assessment", "")),
+            "usage":      usage,
+        }
+    except Exception as exc:
+        print(f"    [researcher-review] failed ({exc})", flush=True)
+        return {}
+
+
 MAX_BODIES_FOR_CLAUDE = 500   # default cap regardless of token budget
 
 
@@ -2189,6 +2709,15 @@ def select_phrase_editorially(
 # ── Phase 9: Data container ───────────────────────────────────────────────────
 
 @dataclass
+class ResearcherFilter:
+    """Output of the researcher pre-pass: a prioritised list of corpus filter elements."""
+    priority_filters: list[dict]   # ordered list of {type, value, estimated_turns}
+    rationale:        str          # paragraph explanation — logged to run output
+    usage:            dict         # {input_tokens, output_tokens} summed across API iterations
+    messages:         list         # full conversation history — preserved for review pass
+
+
+@dataclass
 class PhraseResult:
     phrase:           str
     chamber:          str           # "Senate" | "House" | "Both"
@@ -2204,7 +2733,8 @@ class PhraseResult:
     chart_party_b64:  str = ""
     chart_gov_b64:    str = ""
     speakers_html:    str = ""
-    first_mention:    dict = field(default_factory=dict)
+    first_mention:      dict = field(default_factory=dict)
+    researcher_review:  dict = field(default_factory=dict)
 
 
 # ── Phase 9: HTML assembly ─────────────────────────────────────────────────────
@@ -2440,8 +2970,46 @@ def _process_chamber_phrase(
     print(f"    → {len(matches_df):,} historical matches")
     spikes      = detect_spikes(matches_df)
     spike_years = [s["year"] for s in spikes]
-    bodies      = select_bodies_for_claude(matches_df, phrase, max_turns=args.max_turns)
-    first_men   = get_first_mention(matches_df, phrase)
+
+    # Researcher pre-pass: reduces corpus before turn selection.
+    # Only triggered when corpus exceeds max_turns (Case B candidate).
+    # Full matches_df is retained for charts and spike detection.
+    bodies_df: pd.DataFrame = matches_df
+    rf: Optional[ResearcherFilter] = None
+    if not args.dry_run and len(matches_df) > args.max_turns:
+        rf = researcher_pass(phrase, matches_df, client, args.narrative_model, max_turns=args.max_turns)
+        if rf:
+            print(f"    [researcher] rationale: {rf.rationale}", flush=True)
+            bodies_df = apply_researcher_filter(matches_df, rf, args.max_turns)
+
+    # --research-only: print diagnostic report and skip narrative generation
+    if getattr(args, "research_only", False):
+        sep = "─" * 60
+        print(f"\n{sep}", flush=True)
+        print(f"PHRASE: {phrase}", flush=True)
+        print(f"Corpus size: {len(matches_df):,} turns  |  Target: {args.max_turns}", flush=True)
+        if rf is None:
+            print("Researcher: not triggered (corpus ≤ max_turns or API error)", flush=True)
+        else:
+            actual_filtered = len(bodies_df)
+            estimated_total = sum(f.get("estimated_turns", 0) for f in rf.priority_filters)
+            print(f"\nRESEARCHER FILTER SPEC ({len(rf.priority_filters)} elements):", flush=True)
+            for f in rf.priority_filters:
+                print(
+                    f"  [{f['type']:12s}]  {str(f['value']):30s}  ~{f.get('estimated_turns', '?'):>4} turns",
+                    flush=True,
+                )
+            print(f"\nEstimated coverage: ~{estimated_total} turns", flush=True)
+            print(f"Actual filtered:     {actual_filtered:,} turns", flush=True)
+            print(f"\nRATIONALE:\n{rf.rationale}", flush=True)
+            inp = rf.usage.get("input_tokens",  0)
+            out = rf.usage.get("output_tokens", 0)
+            print(f"\nTOKEN USAGE: {inp:,} input + {out:,} output", flush=True)
+        print(sep, flush=True)
+        return None  # skip narrative, citation pass, and HTML output
+
+    bodies    = select_bodies_for_claude(bodies_df, phrase, max_turns=args.max_turns)
+    first_men = get_first_mention(matches_df, phrase)
 
     # Pre-select week turns once — used consistently by narrative, citation pass, and renderer
     week_bodies = select_week_turns_for_context(week_turns, phrase=phrase) if week_turns is not None else []
@@ -2531,6 +3099,26 @@ def _process_chamber_phrase(
         ]
         narrative_html, citations_html = apply_inline_citations(narrative_html, all_turns)
 
+    # Researcher review: score the finished narrative using the preserved researcher session
+    review: dict = {}
+    if rf is not None and not args.dry_run and narrative_html:
+        print(f"    → researcher review…", flush=True)
+        review = researcher_review(rf, phrase, narrative_html, client, args.narrative_model)
+        if review:
+            score = review.get("score", "?")
+            assessment = review.get("assessment", "")
+            inp  = review.get("usage", {}).get("input_tokens",  0)
+            out  = review.get("usage", {}).get("output_tokens", 0)
+            print(f"    [researcher-review] score {score}/10  ({inp:,}+{out:,} tokens)", flush=True)
+            print(f"    [researcher-review] {assessment}", flush=True)
+            _log(log_path, {
+                "event":      "researcher_review",
+                "phrase":     phrase,
+                "score":      score,
+                "assessment": assessment,
+                "usage":      review.get("usage", {}),
+            })
+
     return PhraseResult(
         phrase=phrase,
         chamber=chamber_label,
@@ -2547,6 +3135,7 @@ def _process_chamber_phrase(
         chart_gov_b64=chart_g,
         speakers_html=build_top_speakers_table(matches_df),
         first_mention=first_men,
+        researcher_review=review,
     )
 
 
@@ -2578,6 +3167,10 @@ def main() -> None:
                     help="Manually specify the search phrase; skips stage direction extraction and Haiku selection.")
     ap.add_argument("--max-turns",     type=int, default=MAX_BODIES_FOR_CLAUDE,
                     help=f"Maximum historical speech turns passed to Claude (default: {MAX_BODIES_FOR_CLAUDE}).")
+    ap.add_argument("--research-only", action="store_true",
+                    help="Run the researcher pre-pass only — print filter spec, rationale, "
+                         "token usage, and estimated/actual filtered counts per phrase. "
+                         "Skips narrative generation and newsletter output.")
     args = ap.parse_args()
 
     args.citations     = not args.no_citations
