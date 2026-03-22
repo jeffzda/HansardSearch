@@ -1490,7 +1490,7 @@ def inject_citation_popups(html: str, phrase: str = "") -> str:
 .pop-speaker{font-weight:700;color:#fabd2f;margin-bottom:3px}
 .pop-meta{font-size:11px;color:#928374;margin-bottom:10px}
 .pop-body{color:#d5c4a1;white-space:pre-wrap;word-break:break-word}
-.pop-body mark{background:#fabd2f;color:#1d2021;padding:0 1px;border-radius:2px}
+.pop-body mark{color:#fabd2f;font-weight:bold;background:none}
 .pop-link{display:block;margin-bottom:4px;font-size:11px;color:#83a598;text-decoration:none}
 .pop-link:hover{text-decoration:underline}
 .pop-ctx-link{display:none;margin-bottom:10px;font-size:11px;color:#8ec07c;text-decoration:none}
@@ -1712,7 +1712,7 @@ color:#ebdbb2;overscroll-behavior:contain;scrollbar-color:#504945 #1d2021;scroll
     if(!_hlTerms.length)return _escHtml(text);
     var out=_escHtml(text);
     for(var i=0;i<_hlTerms.length;i++){
-      var r=new RegExp(_escRe(_escHtml(_hlTerms[i])),'gi');
+      var r=new RegExp('\\b'+_escRe(_escHtml(_hlTerms[i]))+'\\b','gi');
       out=out.replace(r,function(m){return '<mark>'+m+'</mark>';});
     }
     return out;

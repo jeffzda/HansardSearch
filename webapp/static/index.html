@@ -110,7 +110,7 @@
     }
 
     /* ── Layout ───────────────────────────────────────────────────────────── */
-    #header-bar { background: var(--tn-bg-dark) !important; color: var(--tn-fg); border-bottom: 1px solid var(--tn-bg-hi2); flex-wrap: wrap; row-gap: 0; }
+    #header-bar { background: var(--tn-bg-dark) !important; color: var(--tn-fg); border-bottom: 1px solid var(--tn-bg-hi2); display: grid !important; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 12px; }
     @media (max-width: 960px) {
     }
     #sidebar {
@@ -151,12 +151,16 @@
     @media (max-width: 519px) {
       #header-bar { padding: 8px 12px; gap: 8px; }
       #header-version, #corpus-range-label, #header-stats { display: none !important; }
-      #header-controls { display: none !important; }
+      #theme-toggle, #header-controls a[href="/help"] { display: none !important; }
     }
 
     /* Mobile: sidebar becomes a fixed left drawer over the content */
     @media (max-width: 519px) {
       #app-row { display: block !important; }
+      body.searched #main-top {
+        position: sticky; top: 0; z-index: 100;
+        background: var(--tn-bg-dark);
+      }
 
       /* ── Sidebar drawer ───────────────────────────────────────────────────── */
       #sidebar {
@@ -411,7 +415,7 @@
       border: none; padding: 0; font-size: 0.8rem;
     }
     .expand-btn:hover { text-decoration: underline; }
-    mark { background: var(--tn-yellow); color: var(--tn-bg-dark); padding: 0 1px; border-radius: 2px; }
+    mark { color: var(--tn-yellow); font-weight: bold; background: none; }
 
     /* ── Alias container ──────────────────────────────────────────────────── */
     #alias-container {
@@ -454,9 +458,6 @@
     #chart-container.d-none { display: none !important; }
 
     /* ── Trend insight ─────────────────────────────────────────────────────── */
-    #trend-insight { margin-top: 5px; margin-bottom: 6px; font-size: 0.78rem; color: #a89984; line-height: 1.5; }
-    #trend-insight .ti-summary { margin-bottom: 4px; }
-    #trend-insight .ti-tags { display: flex; flex-wrap: wrap; gap: 4px; }
     .ti-tag {
       display: inline-block; padding: 1px 7px; border-radius: 10px;
       border: 1px solid #504945; background: transparent;
@@ -579,10 +580,9 @@
 
 
     #search-pin-group {
-      display: none; flex: 1; min-width: 0; max-width: 560px;
-      flex-direction: column; gap: 4px;
+      display: none; min-width: 0; grid-column: 2; grid-row: 1;
     }
-    body.searched #search-pin-group { display: flex; }
+    body.searched #search-pin-group { display: flex; flex-direction: column; gap: 2px; }
     body.searched #corpus-range-label { display: none !important; }
     body.searched #header-stats       { display: none !important; }
     #search-pin { flex: 1; min-width: 0; }
@@ -593,8 +593,16 @@
     #search-pin .search-wrap #expr-input {
       font-size: 0.85rem; padding-top: 5px; padding-bottom: 5px;
     }
-    #search-controls {
-      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    #header-title { grid-column: 1; grid-row: 1; }
+    #header-controls { grid-column: 3; grid-row: 1; }
+    #search-controls { display: none; align-items: center; flex-wrap: wrap; row-gap: 4px; grid-column: 2; grid-row: 2; }
+    body.searched #search-controls { display: flex; }
+    #search-controls-left { display: flex; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0; }
+    #search-controls-radios { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    #search-controls-right { flex: 1 1 0; }
+    @media (max-width: 600px) {
+      #search-controls-left { flex-basis: 100%; }
+      #search-controls-right { display: none; }
     }
     #suggest-btn {
       background: none;
@@ -610,12 +618,11 @@
     }
     #suggest-btn:hover:not(:disabled) { color: var(--tn-fg); border-color: var(--tn-blue); }
     #suggest-btn:disabled { opacity: 0.4; cursor: default; }
-    @media (max-width: 519px) {
-      #suggest-btn     { order: 10; }
-      #case-sensitive-wrap { order: 11; }
-    }
     @media (max-width: 960px) {
-      body.searched #search-pin-group { flex: 1 1 100%; max-width: none; order: 100; padding: 5px 0 4px; border-top: 1px solid var(--tn-bg-hi2); margin-top: -14px; }
+      body.searched #header-bar { grid-template-columns: auto 1fr; }
+      body.searched #header-controls { grid-column: 2; grid-row: 1; justify-self: end; }
+      body.searched #search-pin-group { grid-column: 1 / -1; grid-row: 2; padding: 5px 0 4px; border-top: 1px solid var(--tn-bg-hi2); }
+      body.searched #search-controls { grid-column: 1 / -1; grid-row: 3; }
     }
 
     /* ── Sidebar tab + inner ──────────────────────────────────────────────── */
@@ -768,8 +775,8 @@
     #reading-pane-header {
       position: sticky; top: 0; z-index: 10;
       background: var(--tn-bg);
-      margin: 0 -20px 12px;
-      padding: 14px 20px 12px;
+      margin: 0 -20px 8px;
+      padding: 8px 20px 8px;
       border-bottom: 1px solid var(--tn-bg-hi2);
     }
     .result-card { cursor: pointer; }
@@ -815,8 +822,8 @@
 <body>
 <div id="progress-bar-track"><div id="progress-bar"></div></div>
 <div id="trial-banner"><div id="trial-banner-inner"></div></div>
-<div id="header-bar" class="py-2 px-4 mb-0 d-flex align-items-center gap-3">
-  <div style="display:flex;align-items:center;gap:inherit;flex-shrink:0;">
+<div id="header-bar" class="py-1 px-4 mb-0">
+  <div id="header-title" style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
   <svg onclick="resetAll()" viewBox="177 0 331 360" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="width:1.095em;height:1.35em;flex-shrink:0;cursor:pointer;opacity:0.85;margin-right:-0.5em" title="Reset to default view">
     <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"  opacity="0.35" d="M 191 323 C 230 305 268 274 299 252 C 318 239 333 223 342 211"/>
     <path fill="none" stroke="var(--tn-fg)" stroke-linecap="round" stroke-linejoin="round" stroke-width="13" opacity="0.65" d="M 189 322 C 228 304 265 272 297 251 C 316 238 331 221 341 210"/>
@@ -889,30 +896,6 @@
   </div><!-- end row 1 -->
     <!-- Row 2: selected alias chips (hidden — terms shown in cards pane instead) -->
     <div id="expr-combined" style="display:none!important"></div>
-    <!-- Row 3: controls -->
-    <div id="search-controls">
-      <div class="form-check form-check-inline mb-0">
-        <input class="form-check-input" type="radio" name="f-chamber" id="ch-house" value="house" />
-        <label class="form-check-label small text-muted" for="ch-house">House <span class="filter-count"></span></label>
-      </div>
-      <div class="form-check form-check-inline mb-0">
-        <input class="form-check-input" type="radio" name="f-chamber" id="ch-senate" value="senate" />
-        <label class="form-check-label small text-muted" for="ch-senate">Senate <span class="filter-count"></span></label>
-      </div>
-      <div class="form-check form-check-inline mb-0">
-        <input class="form-check-input" type="radio" name="f-chamber" id="ch-both" value="both" checked />
-        <label class="form-check-label small text-muted" for="ch-both">Both</label>
-      </div>
-      <div style="width:1px;height:14px;background:var(--tn-bg-hi2);margin:0 2px;flex-shrink:0;"></div>
-      <button id="suggest-btn" onclick="suggestSearch()">✦ Suggest a search</button>
-      <div class="form-check form-switch mb-0" id="case-sensitive-wrap">
-        <input class="form-check-input" type="checkbox" id="f-case-sensitive" />
-        <label class="form-check-label small text-muted" for="f-case-sensitive">Case sensitive</label>
-      </div>
-      <a id="remove-filters-link" href="#" class="d-none small text-muted"
-         style="margin-left:6px;white-space:nowrap;text-decoration:none;opacity:0.75;"
-         onclick="event.preventDefault();resetFilters();">↺ remove filters</a>
-    </div>
     <!-- Related terms popup (fixed, outside search-controls row) -->
     <div id="alias-container" class="d-none p-2 border rounded">
       <div class="mb-2">
@@ -932,9 +915,38 @@
     </div>
   </div>
 
-  <div id="header-controls" style="display:flex;align-items:center;gap:12px;margin-left:auto;flex-shrink:0;">
+  <div id="search-controls">
+    <div id="search-controls-left">
+      <button id="suggest-btn" onclick="suggestSearch()">✦ Suggest a search</button>
+      <div class="form-check form-switch mb-0" id="case-sensitive-wrap">
+        <input class="form-check-input" type="checkbox" id="f-case-sensitive" />
+        <label class="form-check-label small text-muted" for="f-case-sensitive">Case sensitive</label>
+      </div>
+      <a id="remove-filters-link" href="#" class="d-none small text-muted"
+         style="white-space:nowrap;text-decoration:none;opacity:0.75;"
+         onclick="event.preventDefault();resetFilters();">↺ remove filters</a>
+    </div>
+    <div id="search-controls-radios">
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input" type="radio" name="f-chamber" id="ch-house" value="house" />
+        <label class="form-check-label small text-muted" for="ch-house">House <span class="filter-count"></span></label>
+      </div>
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input" type="radio" name="f-chamber" id="ch-senate" value="senate" />
+        <label class="form-check-label small text-muted" for="ch-senate">Senate <span class="filter-count"></span></label>
+      </div>
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input" type="radio" name="f-chamber" id="ch-both" value="both" checked />
+        <label class="form-check-label small text-muted" for="ch-both">Both</label>
+      </div>
+    </div>
+    <div id="search-controls-right"></div>
+  </div>
+
+  <div id="header-controls" style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
     <button id="theme-toggle" onclick="toggleTheme()" class="small" style="background:none;border:none;color:var(--tn-comment);opacity:0.75;cursor:pointer;padding:0;font-size:0.82rem" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75" title="Toggle light/dark mode"></button>
     <a href="/help" class="small" style="color:var(--tn-comment);text-decoration:none;opacity:0.75" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Help</a>
+    <a id="contact-link" href="mailto:jeff@hansardsearch.com.au" class="small" style="color:var(--tn-comment);text-decoration:none;opacity:0.75" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">Contact</a>
   </div>
 </div>
 
@@ -943,7 +955,7 @@
   <div id="app-row" class="row g-0">
 
     <!-- ① Search + chart — first in DOM (top on mobile, right-top on desktop) -->
-    <div id="main-top" class="p-3">
+    <div id="main-top" class="p-2">
 
       <!-- Chamber radio -->
 
@@ -962,8 +974,7 @@
         <canvas id="timeseries-chart"></canvas>
       </div>
 
-      <!-- Trend insight -->
-      <div id="trend-insight" class="d-none"></div>
+
 
       <!-- MAPS (disabled): two choropleth maps below the chart showing Senate results
            by state and House results by electorate. GeoJSON files:
@@ -1265,6 +1276,7 @@ let _expanded = {};            // matchId -> bool
 let _corpusSeeds = [];         // top co-occurring terms from last search result
 let _requestController = null; // AbortController for in-flight search request
 let _currentResults = [];      // results for current page (for client-side sort)
+let _targetTurn = null;        // turn_hash to auto-select on load (from ?turn= URL param)
 let _sortCol = null;           // active sort column key
 let _sortDir = "desc";         // "asc" | "desc"
 let _isLoading = false;        // true while a search request is in flight
@@ -1536,6 +1548,9 @@ function restoreStateFromUrl() {
   const fc = p.get("fedchamb");
   if (fc === "0") document.getElementById("f-main-chamber").checked = true;
   if (fc === "1") document.getElementById("f-fed-chamber").checked  = true;
+
+  const turn = p.get("turn");
+  if (turn) _targetTurn = turn;
 
   return p;
 }
@@ -2484,8 +2499,8 @@ function buildFullExpression() {
     if (!aliases.size) continue;
     const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const aliasList = [...aliases].map(a => `'${a}'`).join(" | ");
-    // Replace 'term' with ('term' | alias1 | alias2), preserving surrounding boolean structure
-    expr = expr.replace(new RegExp(`'${escaped}'`, "g"), `('${term}' | ${aliasList})`);
+    // Replace 'term' or term (quoted or unquoted) with ('term' | alias1 | alias2)
+    expr = expr.replace(new RegExp(`'${escaped}'|\\b${escaped}\\b`, "g"), `('${term}' | ${aliasList})`);
   }
   return expr;
 }
@@ -2613,7 +2628,7 @@ function selectResult(matchId, date, chamber) {
           ${chamberBadge}
           ${termBadgesHtml}
         </div>
-        <a href="${_hansardUrl(res.date, res.chamber)}" target="_blank" rel="noopener"
+        <a id="reading-pane-day-link" href="${res.day_hash ? '/d/'+res.day_hash : '#'}" target="_blank" rel="noopener"
            class="result-date" style="text-decoration:none;color:var(--tn-blue)">
           ${esc(formatDate(res.date))} ↗
         </a>
@@ -2660,7 +2675,6 @@ function searchBtnClick() {
 
 // ── Active-filter badge ────────────────────────────────────────────────────────
 function _hasActiveFilters() {
-  if (document.getElementById("f-case-sensitive").checked) return true;
   const ranges = getDateRanges();
   if (ranges.some(r => r.from !== _corpusDateMin || r.to !== _corpusDateMax)) return true;
   if (document.querySelector(".party-check:checked, .parl-check:checked")) return true;
@@ -2693,6 +2707,32 @@ function _updateFilterBadge() {
 }
 
 // ── Search ─────────────────────────────────────────────────────────────────────
+async function _trySelectTargetTurn() {
+  const target = _targetTurn;
+  _targetTurn = null; // clear before any await to prevent re-entry
+
+  // Check page 1 first (already loaded, free)
+  const found = _currentResults.find(r => r.turn_hash === target);
+  if (found) { selectResult(found.match_id, found.date, found.chamber); return; }
+
+  // Ask server which page this turn is on — single API call, no page limit
+  try {
+    const payload = Object.assign({}, _lastSearch, { turn_hash: target });
+    const resp = await fetch("/api/find_turn_page", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.found || data.page <= 1) return;
+    // Navigate to the correct page, then select the turn
+    await doSearch(data.page);
+    const f2 = _currentResults.find(r => r.turn_hash === target);
+    if (f2) selectResult(f2.match_id, f2.date, f2.chamber);
+  } catch(e) { /* graceful degradation — search remains active */ }
+}
+
 async function doSearch(page) {
   _updateFilterBadge();
   const inputEl = document.getElementById("expr-input");
@@ -2764,6 +2804,7 @@ async function doSearch(page) {
     _applyPanelCrossFilter();
     updateFacetCounts(data.facet_counts);
     renderResults(data);
+    if (_targetTurn) _trySelectTargetTurn();
     updateCombinedExpr();
     if (mainExpr) {
       _setSearchBtnMode("related");
@@ -3035,7 +3076,7 @@ function highlightTerms(text, terms) {
   if (!terms || !terms.length) return esc(text);
   let escaped = esc(text);
   for (const term of terms) {
-    const re = new RegExp(escapeRegex(esc(term)), "gi");
+    const re = new RegExp('\\b' + escapeRegex(esc(term)) + '\\b', "gi");
     escaped = escaped.replace(re, m => `<mark>${m}</mark>`);
   }
   return escaped;
@@ -3763,7 +3804,6 @@ function renderChart(data) {
     { label: "Senate", data: senData, backgroundColor: "rgba(158,61,31,0.75)",  borderColor: "rgba(158,61,31,1)",  borderWidth: 1 },
   ];
   _chart.update('none');
-  renderTrendInsight(senData, houData, axisYears);
 }
 
 // ── Trend heuristics ─────────────────────────────────────────────────────────
@@ -4371,10 +4411,15 @@ function _renderContextWindow() {
     bodyEl.appendChild(div);
   }
 
-  // Scroll the target speech to the centre of the reading pane
+  // Scroll the target speech to just below the sticky pane header
   const targetEl = document.getElementById("ctx-" + _ctxMatchId);
   if (targetEl) {
-    targetEl.scrollIntoView({ block: "center", behavior: "instant" });
+    const pane = document.getElementById("reading-pane");
+    const headerEl = document.getElementById("reading-pane-header");
+    const headerH = headerEl ? headerEl.offsetHeight : 0;
+    // getBoundingClientRect gives viewport-relative positions; pane.scrollTop is 0 at this point
+    const elTop = targetEl.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+    pane.scrollTop = elTop - headerH - 8;
   }
 }
 
