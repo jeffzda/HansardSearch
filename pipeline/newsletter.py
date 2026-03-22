@@ -1266,13 +1266,19 @@ sitting days from the legislative calendar above — prioritise second readings,
 Senate votes, committee report tabling days, and ministerial statements announcing policy.
 A single active debate day typically contributes 20–60 phrase-matching turns.
 
-For longitudinal narrative coverage — ensuring the story spans the full
-{first_year}–{last_year} period and includes voices important outside peak legislative
-moments — complement debate_date with `speaker_year` filters for key contributors.
-A minister's contributions over a 3-year term typically add 50–150 turns.
+For key speakers on those legislative dates: use `speaker_date` with the specific dates
+from the calendar (cross-reference the KEY SPEAKERS matrix). This captures that minister's
+or senator's turns on the exact days that mattered — not every speech they gave over years.
+E.g. {{"type": "speaker_date", "value": {{"speaker": "WONG", "dates": ["2009-11-30", "2009-08-11", ...]}}}}
 
-Accumulate filter elements (debate_date first, then speaker_year, then others as needed)
-until estimated total reaches approximately {max_turns}. Stop when the target is met.
+For longitudinal narrative coverage in periods NOT covered by the debate calendar — voices
+important to the story whose contribution spans years without being anchored to a single
+legislative event — use `speaker_year` as a last resort. Use it sparingly: it adds every
+turn that speaker gave across a year range, which bloats the corpus. Prefer a tighter
+speaker_date over a broad speaker_year wherever the calendar has entries.
+
+Accumulate filter elements (debate_date first, then speaker_date, then speaker_year only
+for gaps) until estimated total reaches approximately {max_turns}. Stop when the target is met.
 
 4. Rank filter elements in descending order of historical/political significance — not
    by mention count. debate_date elements for landmark sittings rank above broad
@@ -1287,6 +1293,7 @@ Return JSON only — NO prose, no markdown fences, no explanation outside the ra
 {{
   "priority_filters": [
     {{"type": "debate_date",      "value": ["YYYY-MM-DD", ...],                       "estimated_turns": <int>}},
+    {{"type": "speaker_date",     "value": {{"speaker": "<name>", "dates": ["YYYY-MM-DD", ...]}}, "estimated_turns": <int>}},
     {{"type": "speaker_year",     "value": {{"speaker": "<name>", "years": [<from>, <to>]}}, "estimated_turns": <int>}},
     {{"type": "speaker",          "value": "<partial name or surname>",               "estimated_turns": <int>}},
     {{"type": "year_range",       "value": [<from_year>, <to_year>],                  "estimated_turns": <int>}},
@@ -1303,17 +1310,22 @@ Return JSON only — NO prose, no markdown fences, no explanation outside the ra
 }}
 
 Rules:
-- type must be one of: "speaker", "year_range", "party", "speaker_year", "speaker_type",
-  "speaker_year_type", "gov_era", "division_turns", "state_year"
-- speaker / speaker_year / speaker_type / speaker_year_type:
+- type must be one of: "speaker", "year_range", "party", "speaker_date", "speaker_year",
+  "speaker_type", "speaker_year_type", "gov_era", "division_turns", "state_year"
+- speaker / speaker_date / speaker_year / speaker_type / speaker_year_type:
   Speaker values are case-insensitive substrings matched against the name column. A value
   of "WONG" will match any speaker whose name contains "WONG". The actual filtered count
   will always exceed your estimate because the same speaker appears under multiple name
   variants in Hansard formatting. Treat estimated_turns as a conservative lower bound.
-  Use compound types (speaker_year, speaker_year_type) when you want a specific person's
-  turns during a specific legislative period, not their entire corpus. This is the most
-  precise filter available — use it when a person's significance is concentrated in a
-  known period.
+- speaker_date: the most precise speaker filter. Takes {{"speaker": "<name>", "dates":
+  ["YYYY-MM-DD", ...]}}. Selects only that speaker's turns on those specific sitting days.
+  Use this (not speaker_year) when the speaker's importance is tied to specific legislative
+  dates visible in the calendar. Cross-reference the KEY SPEAKERS matrix to pick the dates
+  where that speaker was most active.
+- speaker_year: use only for longitudinal coverage in periods where the debate calendar
+  has no entries — e.g. a senator who contributed consistently across a 3-year period
+  not anchored to a single bill. Avoid for speakers whose significance is concentrated
+  in known legislative events; use speaker_date instead.
 - year_range: value is [from, to] inclusive; use [year, year] for a single year. Year
   ranges are exact — prefer them over speaker-only filters where the story is structured
   around events or legislative moments. They don't suffer from the name-variant inflation.
@@ -1336,13 +1348,10 @@ Rules:
   (policy ownership); "statement" for long-form speeches (substantive debate); "question"
   for persistent scrutineers. Avoid "interject" — these are rarely substantive.
 - debate_date: value is a list of one or more ISO date strings (e.g. ["2011-11-08",
-  "2011-11-09"]). Selects all phrase-matching turns from those specific sitting days.
-  Use the "turns that day" column in the topic calendar to estimate how many turns each
-  date contributes. This is the most targeted filter available — use it for the most
-  historically significant single sitting days (e.g. when a landmark bill was read a
-  second time, when a committee report was tabled, when a PM made a major statement).
-  A single high-activity date can contribute as much as a broad year_range filter with
-  far greater precision.
+  "2011-11-09"]). Selects ALL phrase-matching turns from those specific sitting days
+  regardless of speaker. Use the "turns that day" column in the topic calendar to
+  estimate how many turns each date contributes. Combine with speaker_date when you
+  want a specific speaker's turns on specific dates rather than everyone on those dates.
 - Return [] for priority_filters only if you have no confident view on this topic at all
 """
 
@@ -1445,6 +1454,7 @@ def apply_researcher_filter(
       speaker          — name substring match
       year_range       — inclusive year range
       party            — exact party code
+      speaker_date     — speaker substring AND date.isin(specific dates)
       speaker_year     — speaker substring AND year range
       speaker_type     — speaker substring AND turn type (statement/question/answer/interject)
       speaker_year_type — all three combined
@@ -1468,6 +1478,21 @@ def apply_researcher_filter(
 
         elif ftype == "party":
             mask |= matches_df["party"] == str(val)
+
+        elif ftype == "speaker_date" and isinstance(val, dict):
+            spk   = val.get("speaker", "")
+            dates = val.get("dates", [])
+            if spk and isinstance(dates, (list, tuple)):
+                spk_mask = matches_df["name"].str.contains(str(spk), case=False, na=False)
+                date_col = pd.to_datetime(matches_df["date"], errors="coerce").dt.date
+                target_dates: set = set()
+                for d in dates:
+                    try:
+                        target_dates.add(pd.to_datetime(str(d)).date())
+                    except Exception:
+                        pass
+                if target_dates:
+                    mask |= (spk_mask & date_col.isin(target_dates))
 
         elif ftype == "speaker_year" and isinstance(val, dict):
             spk   = val.get("speaker", "")
