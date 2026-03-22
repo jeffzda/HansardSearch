@@ -502,17 +502,17 @@ def search_phrase_in_fts(
         return pd.DataFrame()
 
     placeholders = ",".join("?" * len(rowids))
+    cols = "date, name, name_id, party, state, in_gov, question, answer, interject, div_flag, body"
     if chamber_key is not None:
         df = pd.read_sql_query(
-            f"SELECT date, name, name_id, party, in_gov, body, "
-            f"'{chamber_key.capitalize()}' AS chamber "
+            f"SELECT {cols}, '{chamber_key.capitalize()}' AS chamber "
             f"FROM speeches WHERE rowid IN ({placeholders}) AND chamber = ?",
             conn, params=rowids + [chamber_key],
         )
     else:
         # Joint: both chambers — capitalise the stored lowercase value for display
         df = pd.read_sql_query(
-            f"SELECT date, name, name_id, party, in_gov, body, chamber "
+            f"SELECT {cols}, chamber "
             f"FROM speeches WHERE rowid IN ({placeholders})",
             conn, params=rowids,
         )
@@ -525,6 +525,9 @@ def search_phrase_in_fts(
     df["year"]       = pd.to_datetime(df["date"], errors="coerce").dt.year
     df["party_group"] = df["party"].apply(build_party_group)
     df["in_gov"]     = pd.to_numeric(df["in_gov"], errors="coerce").fillna(0).astype(int)
+    for _col in ("question", "answer", "interject", "div_flag"):
+        if _col in df.columns:
+            df[_col] = pd.to_numeric(df[_col], errors="coerce").fillna(0).astype(int)
     return df
 
 
