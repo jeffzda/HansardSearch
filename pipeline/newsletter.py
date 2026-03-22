@@ -778,6 +778,32 @@ def researcher_pass(
             party_year_lines.append(f"  {party}: {yr_str}")
     party_year_text = "\n".join(party_year_lines) or "  (no data)"
 
+    # Division turns total (for calibrating division_turns filter)
+    division_turns_total = int(matches_df["div_flag"].astype(bool).sum())
+
+    # Per-state per-year counts (Senate only; for calibrating state_year filter)
+    state_year_text = "(no state data — House corpus or state column absent)"
+    if "state" in matches_df.columns:
+        state_df = matches_df[matches_df["state"].notna() & (matches_df["state"] != "")]
+        if not state_df.empty:
+            state_year = (
+                state_df.groupby(["state", "year"]).size()
+                .unstack(fill_value=0)
+            )
+            top_states = state_df.groupby("state").size().nlargest(8).index
+            state_year = state_year.loc[state_year.index.isin(top_states)]
+            state_lines: list[str] = []
+            for st in state_year.index:
+                active = {
+                    int(yr): int(cnt)
+                    for yr, cnt in state_year.loc[st].items()
+                    if cnt > 0
+                }
+                if active:
+                    yr_str = " ".join(f"{y}({c})" for y, c in sorted(active.items()))
+                    state_lines.append(f"  {st}: {yr_str}")
+            state_year_text = "\n".join(state_lines) or "  (no data)"
+
     now = datetime.now()
     current_date_str = now.strftime("%-d %B %Y")   # e.g. "22 March 2026"
     prompt = f"""You are an expert on Australian federal political history (1998–present).
@@ -811,7 +837,13 @@ Per-party per-year activity (use to identify which party owned each era of the d
 and to distinguish between government-side policy architects and opposition attackers):
 {party_year_text}
 
-Top 40 speakers (name, party, total turns, per-year breakdown):
+Division turns (div_flag=1; on-record votes — use to calibrate division_turns filter):
+  Total: {division_turns_total}
+
+Per-state per-year activity (Senate only — use to calibrate state_year filter):
+{state_year_text}
+
+Top 40 speakers (name, party, total turns, [turn-type breakdown], per-year counts):
 {speakers_text}
 
 INSTRUCTIONS:
