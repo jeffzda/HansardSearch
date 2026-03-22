@@ -461,13 +461,18 @@ def search_phrase_in_fts(
     FTS5 phrase search is case-insensitive by default.
     """
     # Build FTS5 query using the same boolean expression parser as the webapp.
-    normalised = _normalise_phrase(phrase)
+    # Try the raw phrase first (handles already-quoted expressions like ('a' | 'b')),
+    # then fall back to normalised form, then to a literal phrase.
     try:
-        ast = parse_expression(normalised)
+        ast = parse_expression(phrase)
         fts5_query = _ast_to_fts5(ast)
     except Exception:
-        # Fallback: treat as a literal phrase
-        fts5_query = f'"{phrase.replace(chr(34), chr(34)*2)}"'
+        try:
+            normalised = _normalise_phrase(phrase)
+            ast = parse_expression(normalised)
+            fts5_query = _ast_to_fts5(ast)
+        except Exception:
+            fts5_query = f'"{phrase.replace(chr(34), chr(34)*2)}"'
 
     rowids = [
         r[0] for r in conn.execute(
@@ -607,16 +612,22 @@ def _df_matches_phrase(df: pd.DataFrame, phrase: str) -> pd.DataFrame:
 
     bodies = df["body"].fillna("").astype(str)
 
+    # Try raw phrase first (handles already-quoted expressions), then normalised, then substring
     try:
-        normalised = _normalise_phrase(phrase)
-        ast = parse_expression(normalised)
+        ast = parse_expression(phrase)
         mask = _eval_tree(ast, bodies)
         return df[mask].copy()
     except Exception:
-        # Fallback: simple case-insensitive substring match on first term
-        simple = re.split(r'[&|~]', phrase)[0].strip().strip("'\"")
-        pat = re.compile(re.escape(simple), re.IGNORECASE)
-        return df[bodies.str.contains(pat, na=False)].copy()
+        try:
+            normalised = _normalise_phrase(phrase)
+            ast = parse_expression(normalised)
+            mask = _eval_tree(ast, bodies)
+            return df[mask].copy()
+        except Exception:
+            # Fallback: simple case-insensitive substring match on first term
+            simple = re.split(r'[&|~]', phrase)[0].strip().strip("'\"")
+            pat = re.compile(re.escape(simple), re.IGNORECASE)
+            return df[bodies.str.contains(pat, na=False)].copy()
 
 
 MAX_BODIES_FOR_CLAUDE = 500   # default cap regardless of token budget
@@ -1135,6 +1146,8 @@ CORPUS SCOPE: The data covers 1998–present. Do not treat 1998 as the origin of
 
 GROUNDING: Claims about the data (specific quotes, speaker counts, spike years, party breakdowns) must be traceable to the statistics or speech turns provided. Where broader historical or political context genuinely illuminates the story, you may draw on your background knowledge — but only where it adds insight, not as a structural obligation.
 
+SEARCH EXPRESSION HANDLING: The PHRASE field in the data is a boolean search expression, not necessarily a literal phrase that appears in Hansard. Do not quote or reproduce the boolean syntax (|, &, parentheses, quotes) in your prose. Instead, read the expression and infer the natural topic it represents, then write about that topic as a journalist would. For example: if the expression is '"mental health" & addiction', write about parliamentary debate on mental health and addiction — not about politicians using the phrase "mental health & addiction". If the expression is '\'coral bleaching\' | \'ocean warming\' | \'reef degradation\'', write about debate on the health of the reef and ocean warming — not about which specific search terms appeared. Refer to the underlying subject matter naturally throughout, varying your language as any good writer would.
+
 {narrative_arc_instruction}
 
 Then add a <blockquote> of the most revealing or striking quote from the provided speech turns, followed by <p class="attribution"> with: [Speaker Name, Party, Date, Chamber].
@@ -1432,16 +1445,44 @@ def _turn_url(turn_hash: str) -> str:
     return f"https://hansardsearch.com.au/t/{turn_hash}"
 
 
-def inject_citation_popups(html: str) -> str:
-    """Post-process newsletter HTML to add hover popups on inline citations.
+def inject_citation_popups(html: str, phrase: str = "") -> str:
+    """Post-process newsletter HTML to add click popups on inline citations.
 
-    Injects a self-contained CSS+HTML+JS block before </body>.  On hover over a
+    Injects a self-contained CSS+HTML+JS block before </body>.  On click of a
     [N] citation superscript, fetches the corresponding turn page from
     hansardsearch.com.au/t/<hash> and displays speaker + body text in a floating
-    popup.  Gracefully degrades if the fetch fails.
+    popup.  Includes a "View in context" back-link to Hansard Search with the
+    newsletter phrase pre-filled.  Click outside or press Escape to dismiss.
+    Anchor jump is suppressed.  Gracefully degrades if the fetch fails.
     """
     _POPUP_BLOCK = r"""
 <style>
+/* ── Shared popup content ─────────────────────────────────────────── */
+.pop-speaker{font-weight:700;color:#fabd2f;margin-bottom:3px}
+.pop-meta{font-size:11px;color:#928374;margin-bottom:10px}
+.pop-body{color:#d5c4a1;white-space:pre-wrap;word-break:break-word}
+.pop-link{display:block;margin-bottom:4px;font-size:11px;color:#83a598;text-decoration:none}
+.pop-link:hover{text-decoration:underline}
+.pop-ctx-link{display:none;margin-bottom:10px;font-size:11px;color:#8ec07c;text-decoration:none}
+.pop-ctx-link:hover{text-decoration:underline}
+.pop-feedback{margin-top:12px;display:flex;align-items:center;gap:8px;border-top:1px solid #3c3836;padding-top:10px}
+.pop-thumb{background:transparent;border:1px solid #504945;border-radius:4px;padding:3px 9px;font-size:13px;cursor:pointer;color:#928374;display:inline-flex;align-items:center;gap:5px;line-height:1}
+.pop-thumb:hover{border-color:#83a598;color:#83a598}
+.pop-thumb.pop-thumb-bad:hover{border-color:#fb4934;color:#fb4934}
+.pop-thumb.active-good{border-color:#83a598;color:#83a598;background:#1d2021}
+.pop-thumb.active-bad{border-color:#fb4934;color:#fb4934;background:#1d2021}
+.pop-thumb-count{font-size:11px;color:inherit}
+.pop-report{margin-top:8px;padding:10px 12px;background:#1d2021;border:1px solid #504945;border-radius:4px;font-size:12px;display:none}
+.pop-group-label{color:#fabd2f;font-size:11px;font-weight:700;margin:8px 0 4px}
+.pop-report label{display:block;margin:3px 0;color:#d5c4a1;cursor:pointer}
+.pop-report input[type=checkbox]{margin-right:5px;accent-color:#83a598}
+.pop-report-actions{margin-top:8px;display:flex;gap:6px}
+.pop-submit{background:#cc241d;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer}
+.pop-submit:hover{background:#fb4934}
+.pop-cancel{background:transparent;color:#928374;border:1px solid #504945;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer}
+.pop-cancel:hover{color:#ebdbb2}
+.pop-confirm{margin-top:10px;color:#b8bb26;font-size:12px;font-style:italic;border-top:1px solid #3c3836;padding-top:8px;display:none}
+/* ── Desktop floating popup (hidden on mobile) ───────────────────── */
 #cite-popup{position:fixed;z-index:9999;background:#282828;border:1px solid #504945;
 border-radius:6px;box-shadow:0 4px 20px rgba(0,0,0,.55);padding:14px 16px;
 max-width:500px;max-height:520px;overflow-y:auto;font-size:13px;line-height:1.55;
@@ -1450,35 +1491,29 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
 #cite-popup::-webkit-scrollbar-track{background:#1d2021}
 #cite-popup::-webkit-scrollbar-thumb{background:#504945;border-radius:3px}
 #cite-popup::-webkit-scrollbar-thumb:hover{background:#665c54}
-#cite-popup .pop-speaker{font-weight:700;color:#fabd2f;margin-bottom:3px}
-#cite-popup .pop-meta{font-size:11px;color:#928374;margin-bottom:10px}
-#cite-popup .pop-body{color:#d5c4a1;white-space:pre-wrap;word-break:break-word}
-#cite-popup .pop-link{display:block;margin-bottom:10px;font-size:11px;color:#83a598;text-decoration:none}
-#cite-popup .pop-link:hover{text-decoration:underline}
-#cite-popup .pop-feedback{margin-top:12px;display:flex;gap:8px;border-top:1px solid #3c3836;padding-top:10px}
-#cite-popup .pop-good{background:#458588;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer}
-#cite-popup .pop-good:hover{background:#83a598}
-#cite-popup .pop-report-btn{background:transparent;color:#928374;border:1px solid #504945;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer}
-#cite-popup .pop-report-btn:hover{color:#ebdbb2;border-color:#928374}
-#cite-popup .pop-report{margin-top:8px;font-size:12px;display:none}
-#cite-popup .pop-group-label{color:#fabd2f;font-size:11px;font-weight:700;margin:8px 0 4px}
-#cite-popup .pop-report label{display:block;margin:3px 0;color:#d5c4a1;cursor:pointer}
-#cite-popup .pop-report input[type=checkbox]{margin-right:5px;accent-color:#83a598}
-#cite-popup .pop-report-actions{margin-top:8px;display:flex;gap:6px}
-#cite-popup .pop-submit{background:#cc241d;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer}
-#cite-popup .pop-submit:hover{background:#fb4934}
-#cite-popup .pop-cancel{background:transparent;color:#928374;border:1px solid #504945;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer}
-#cite-popup .pop-cancel:hover{color:#ebdbb2}
-#cite-popup .pop-confirm{margin-top:10px;color:#b8bb26;font-size:12px;font-style:italic;border-top:1px solid #3c3836;padding-top:8px;display:none}
+/* ── Mobile full-screen overlay (hidden on desktop) ──────────────── */
+#cite-overlay{display:none;position:fixed;inset:0;z-index:9999;background:#282828;
+flex-direction:column;overflow:hidden}
+#cite-overlay.cite-overlay-open{display:flex}
+#cite-overlay-back{width:100%;text-align:left;background:#3c3836;border:none;
+border-bottom:1px solid #504945;color:#ebdbb2;font-size:0.9rem;padding:13px 16px;
+cursor:pointer;flex-shrink:0;letter-spacing:0.01em}
+#cite-overlay-back:active{background:#504945}
+#cite-overlay-scroll{flex:1;overflow-y:auto;padding:16px;font-size:14px;line-height:1.65;
+color:#ebdbb2;overscroll-behavior:contain;scrollbar-color:#504945 #1d2021;scrollbar-width:thin}
+@media(min-width:520px){#cite-overlay{display:none!important}}
+@media(max-width:519px){#cite-popup{display:none!important}}
 </style>
+<!-- Desktop popup -->
 <div id="cite-popup">
   <div class="pop-speaker"></div>
   <div class="pop-meta"></div>
   <a class="pop-link" target="_blank" rel="noopener"></a>
+  <a class="pop-ctx-link" target="_blank" rel="noopener">View in context at Hansard Search &#x2197;</a>
   <div class="pop-body"></div>
   <div class="pop-feedback">
-    <button class="pop-good">&#128077; Good citation</button>
-    <button class="pop-report-btn">&#9872; Report issue</button>
+    <button class="pop-thumb pop-thumb-good" title="Good citation">&#128077; <span class="pop-thumb-count pop-good-count">&#183;</span></button>
+    <button class="pop-thumb pop-thumb-bad" title="Report issue">&#128078; <span class="pop-thumb-count pop-bad-count">&#183;</span></button>
   </div>
   <div class="pop-report">
     <div class="pop-group-label">Factual errors</div>
@@ -1499,18 +1534,50 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
   </div>
   <div class="pop-confirm">Thank you for your feedback.</div>
 </div>
+<!-- Mobile full-screen overlay -->
+<div id="cite-overlay">
+  <button id="cite-overlay-back">&#8592; Back</button>
+  <div id="cite-overlay-scroll">
+    <div class="pop-speaker"></div>
+    <div class="pop-meta"></div>
+    <a class="pop-link" target="_blank" rel="noopener"></a>
+    <a class="pop-ctx-link" target="_blank" rel="noopener">View in context at Hansard Search &#x2197;</a>
+    <div class="pop-body"></div>
+    <div class="pop-feedback">
+      <button class="pop-thumb pop-thumb-good" title="Good citation">&#128077; <span class="pop-thumb-count pop-good-count">&#183;</span></button>
+      <button class="pop-thumb pop-thumb-bad" title="Report issue">&#128078; <span class="pop-thumb-count pop-bad-count">&#183;</span></button>
+    </div>
+    <div class="pop-report">
+      <div class="pop-group-label">Factual errors</div>
+      <label><input type="checkbox" value="wrong_speaker"> Wrong speaker</label>
+      <label><input type="checkbox" value="wrong_party"> Wrong party</label>
+      <label><input type="checkbox" value="wrong_chamber"> Wrong chamber</label>
+      <label><input type="checkbox" value="wrong_date"> Wrong date</label>
+      <label><input type="checkbox" value="quote_not_found"> Quote not in speech</label>
+      <label><input type="checkbox" value="not_a_speech"> Statistic not a speech turn</label>
+      <div class="pop-group-label">Interpretive errors</div>
+      <label><input type="checkbox" value="doesnt_support_claim"> Citation doesn&#8217;t support claim</label>
+      <label><input type="checkbox" value="misrepresents_speaker"> Misrepresents what speaker said</label>
+      <label><input type="checkbox" value="out_of_context"> Out of context</label>
+      <div class="pop-report-actions">
+        <button class="pop-submit">Submit report</button>
+        <button class="pop-cancel">Cancel</button>
+      </div>
+    </div>
+    <div class="pop-confirm">Thank you for your feedback.</div>
+  </div>
+</div>
 <script>
 (function(){
   var popup=document.getElementById('cite-popup');
-  var spkEl=popup.querySelector('.pop-speaker');
-  var metEl=popup.querySelector('.pop-meta');
-  var bodEl=popup.querySelector('.pop-body');
-  var lnkEl=popup.querySelector('.pop-link');
-  var fbDiv=popup.querySelector('.pop-feedback');
-  var repDiv=popup.querySelector('.pop-report');
-  var repBtn=popup.querySelector('.pop-report-btn');
-  var conDiv=popup.querySelector('.pop-confirm');
-  var hideTimer=null;
+  var overlay=document.getElementById('cite-overlay');
+  var overlayScroll=document.getElementById('cite-overlay-scroll');
+
+  /* Resolve active container based on viewport width */
+  function isMobile(){return window.innerWidth<520;}
+  function activeContainer(){return isMobile()?overlay:popup;}
+
+  var newsletterPhrase='__NEWSLETTER_PHRASE__';
   var _cache={};
   var currentUrl='';
   var currentCitationNum='';
@@ -1526,18 +1593,20 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
     popup.style.top=y+'px';
   }
 
-  function resetFeedback(){
-    fbDiv.style.display='flex';
-    repDiv.style.display='none';
-    repBtn.style.display='inline-block';
-    conDiv.style.display='none';
-    popup.querySelectorAll('.pop-report input').forEach(function(i){i.checked=false;});
+  function resetFeedback(container){
+    container.querySelector('.pop-thumb-good').classList.remove('active-good');
+    container.querySelector('.pop-thumb-bad').classList.remove('active-bad');
+    container.querySelector('.pop-good-count').textContent='\u00b7';
+    container.querySelector('.pop-bad-count').textContent='\u00b7';
+    container.querySelector('.pop-report').style.display='none';
+    container.querySelector('.pop-confirm').style.display='none';
+    container.querySelectorAll('.pop-report input').forEach(function(i){i.checked=false;});
   }
 
-  function showConfirm(){
-    fbDiv.style.display='none';
-    repDiv.style.display='none';
-    conDiv.style.display='block';
+  function showConfirm(container){
+    container.querySelector('.pop-feedback').style.display='none';
+    container.querySelector('.pop-report').style.display='none';
+    container.querySelector('.pop-confirm').style.display='block';
   }
 
   async function postFeedback(feedback){
@@ -1557,29 +1626,54 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
     }catch(e){}
   }
 
-  popup.querySelector('.pop-good').addEventListener('click',async function(){
-    await postFeedback('good');
-    showConfirm();
-  });
+  function wireButtons(container){
+    var goodBtn=container.querySelector('.pop-thumb-good');
+    var badBtn=container.querySelector('.pop-thumb-bad');
+    var goodCount=container.querySelector('.pop-good-count');
+    var badCount=container.querySelector('.pop-bad-count');
+    var repDiv=container.querySelector('.pop-report');
 
-  repBtn.addEventListener('click',function(){
-    repDiv.style.display='block';
-    repBtn.style.display='none';
-  });
+    goodBtn.addEventListener('click',async function(){
+      if(goodBtn.classList.contains('active-good'))return;
+      await postFeedback('good');
+      var n=parseInt(goodCount.textContent)||0;
+      goodCount.textContent=n+1;
+      goodBtn.classList.add('active-good');
+      repDiv.style.display='none';
+      badBtn.classList.remove('active-bad');
+    });
 
-  popup.querySelector('.pop-cancel').addEventListener('click',function(){
-    repDiv.style.display='none';
-    repBtn.style.display='inline-block';
-  });
+    badBtn.addEventListener('click',function(){
+      var open=repDiv.style.display==='block';
+      repDiv.style.display=open?'none':'block';
+      badBtn.classList.toggle('active-bad',!open);
+    });
 
-  popup.querySelector('.pop-submit').addEventListener('click',async function(){
-    var checked=Array.from(popup.querySelectorAll('.pop-report input:checked')).map(function(i){return i.value;});
-    if(!checked.length)return;
-    await postFeedback(checked);
-    showConfirm();
-  });
+    container.querySelector('.pop-cancel').addEventListener('click',function(){
+      repDiv.style.display='none';
+      badBtn.classList.remove('active-bad');
+    });
 
-  async function show(sup){
+    container.querySelector('.pop-submit').addEventListener('click',async function(){
+      var checked=Array.from(container.querySelectorAll('.pop-report input:checked')).map(function(i){return i.value;});
+      if(!checked.length)return;
+      await postFeedback(checked);
+      var n=parseInt(badCount.textContent)||0;
+      badCount.textContent=n+1;
+      badBtn.classList.add('active-bad');
+      repDiv.style.display='none';
+      showConfirm(container);
+    });
+  }
+  wireButtons(popup);
+  wireButtons(overlay);
+
+  async function populateContainer(container,sup){
+    var spkEl=container.querySelector('.pop-speaker');
+    var metEl=container.querySelector('.pop-meta');
+    var bodEl=container.querySelector('.pop-body');
+    var lnkEl=container.querySelector('.pop-link');
+    var ctxEl=container.querySelector('.pop-ctx-link');
     var a=sup.querySelector('a');
     if(!a)return;
     var refEl=document.getElementById(a.getAttribute('href').slice(1));
@@ -1595,9 +1689,27 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
     bodEl.textContent=url?'Loading\u2026':'';
     lnkEl.textContent=url?'Shareable Permalink \u2197':'';
     lnkEl.href=url||'';
-    resetFeedback();
-    posFromEl(sup);
-    popup.style.display='block';
+    if(ctxEl){
+      if(newsletterPhrase){
+        var turnHash=(url&&url.match(/\/t\/([a-f0-9]+)/))||[];
+        var ctxUrl='https://hansardsearch.com.au/?q='+encodeURIComponent(newsletterPhrase);
+        if(turnHash[1])ctxUrl+='&turn='+turnHash[1];
+        ctxEl.href=ctxUrl;
+        ctxEl.style.display='block';
+      }else{
+        ctxEl.style.display='none';
+      }
+    }
+    resetFeedback(container);
+    var turnHash=(url&&url.match(/\/t\/([a-f0-9]+)/))||[];
+    if(turnHash[1]){
+      fetch('https://hansardsearch.com.au/api/citation-feedback-counts?turn_hash='+turnHash[1])
+        .then(function(r){return r.json();})
+        .then(function(d){
+          container.querySelector('.pop-good-count').textContent=d.good||0;
+          container.querySelector('.pop-bad-count').textContent=d.bad||0;
+        }).catch(function(){});
+    }
     if(!url)return;
     if(_cache[url]!==undefined){bodEl.textContent=_cache[url];return;}
     try{
@@ -1613,15 +1725,114 @@ color:#ebdbb2;pointer-events:auto;display:none;scrollbar-color:#504945 #1d2021;s
     }
   }
 
-  document.querySelectorAll('sup.cite').forEach(function(sup){
-    sup.addEventListener('mouseenter',function(){clearTimeout(hideTimer);show(sup);});
-    sup.addEventListener('mouseleave',function(){hideTimer=setTimeout(function(){popup.style.display='none';},300);});
+  async function show(sup){
+    if(isMobile()){
+      await populateContainer(overlay,sup);
+      overlayScroll.scrollTop=0;
+      overlay.classList.add('cite-overlay-open');
+      document.body.style.overflow='hidden';
+    }else{
+      await populateContainer(popup,sup);
+      posFromEl(sup);
+      popup.style.display='block';
+    }
+  }
+
+  function hidePopup(){
+    popup.style.display='none';
+    popup.dataset.openFor='';
+  }
+
+  function hideOverlay(animated,dir){
+    if(animated){
+      overlay.style.transition='transform 0.22s ease';
+      overlay.style.transform=dir>0?'translateX(100%)':'translateX(-100%)';
+      overlay.addEventListener('transitionend',function(){
+        overlay.style.transition='';
+        overlay.style.transform='';
+        overlay.classList.remove('cite-overlay-open');
+        document.body.style.overflow='';
+      },{once:true});
+    }else{
+      overlay.style.transition='';
+      overlay.style.transform='';
+      overlay.classList.remove('cite-overlay-open');
+      document.body.style.overflow='';
+    }
+  }
+
+  /* Back button */
+  document.getElementById('cite-overlay-back').addEventListener('click',function(){
+    hideOverlay(false,0);
   });
-  popup.addEventListener('mouseenter',function(){clearTimeout(hideTimer);});
-  popup.addEventListener('mouseleave',function(){hideTimer=setTimeout(function(){popup.style.display='none';},300);});
+
+  /* Swipe to dismiss overlay */
+  (function(){
+    var touchStartX=0,touchStartY=0,claiming=false,swipeDir=0;
+    overlay.addEventListener('touchstart',function(e){
+      if(!overlay.classList.contains('cite-overlay-open'))return;
+      touchStartX=e.touches[0].clientX;
+      touchStartY=e.touches[0].clientY;
+      claiming=false;swipeDir=0;
+      overlay.style.transition='';
+    },{passive:true});
+    overlay.addEventListener('touchmove',function(e){
+      if(!overlay.classList.contains('cite-overlay-open'))return;
+      var dx=e.touches[0].clientX-touchStartX;
+      var dy=e.touches[0].clientY-touchStartY;
+      if(!claiming&&Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>10){
+        claiming=true;swipeDir=dx>0?1:-1;
+      }
+      if(claiming){
+        e.preventDefault();
+        if(Math.sign(dx)===swipeDir)overlay.style.transform='translateX('+dx+'px)';
+      }
+    },{passive:false});
+    overlay.addEventListener('touchend',function(e){
+      if(!overlay.classList.contains('cite-overlay-open')||!claiming)return;
+      claiming=false;
+      var dx=e.changedTouches[0].clientX-touchStartX;
+      var dy=e.changedTouches[0].clientY-touchStartY;
+      if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)&&Math.sign(dx)===swipeDir){
+        hideOverlay(true,swipeDir);
+      }else{
+        overlay.style.transition='transform 0.18s ease';
+        overlay.style.transform='translateX(0)';
+        overlay.addEventListener('transitionend',function(){overlay.style.transition='';},{once:true});
+      }
+    });
+  })();
+
+  /* Citation click handlers */
+  document.querySelectorAll('sup.cite').forEach(function(sup){
+    var a=sup.querySelector('a');
+    if(a)a.addEventListener('click',function(e){e.preventDefault();});
+    sup.addEventListener('click',function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      if(!isMobile()&&popup.style.display==='block'&&popup.dataset.openFor===sup.id){
+        hidePopup();
+      }else{
+        popup.dataset.openFor=sup.id||'';
+        show(sup);
+      }
+    });
+  });
+
+  /* Click outside desktop popup to close */
+  document.addEventListener('click',function(e){
+    if(popup.style.display==='block'&&!popup.contains(e.target)){hidePopup();}
+  });
+
+  /* Escape to close either */
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){hidePopup();hideOverlay(false,0);}
+  });
 })();
 </script>
 """
+    safe_phrase = phrase.replace("\\", "\\\\").replace("'", "\\'")
+    _POPUP_BLOCK = _POPUP_BLOCK.replace("__NEWSLETTER_PHRASE__", safe_phrase)
     return html.replace("</body>", _POPUP_BLOCK + "\n</body>", 1)
 
 
@@ -2000,12 +2211,23 @@ sup.cite a:hover { text-decoration: underline; }
 @media (max-width: 600px) {
   .chart-pair { grid-template-columns: 1fr; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .container { padding: 12px 14px; }
+  header { padding: 18px 14px 14px; }
+  .phrase-block { padding: 18px 16px; }
 }
 """
 
 
 def _phrase_block_html(pr: PhraseResult, citations_on: bool) -> str:
     """Render one phrase section."""
+    from urllib.parse import quote_plus as _qp
+    source_url = f"https://hansardsearch.com.au/?q={_qp(pr.phrase)}" if pr.phrase else ""
+    _link_style = "color:inherit;text-decoration:none;cursor:pointer"
+    _link_style_blue = "color:#83a598;text-decoration:none"
+
+    def _maybe_link(content: str, style: str = _link_style) -> str:
+        return f'<a href="{source_url}" target="_blank" rel="noopener" style="{style}">{content}</a>' if source_url else content
+
     spike_callout = ""
     if pr.spike_years:
         spike_text = ", ".join(
@@ -2017,14 +2239,23 @@ def _phrase_block_html(pr: PhraseResult, citations_on: bool) -> str:
             f'</div>'
         )
 
-    chart_year_tag  = (
-        f'<img src="data:image/png;base64,{pr.chart_year_b64}" alt="Year trend"'
-        f' style="width:100%;border-radius:4px;border:1px solid #3c3836;display:block;margin:16px 0 0">'
-    ) if pr.chart_year_b64 else ""
+    chart_year_tag = ""
+    if pr.chart_year_b64:
+        img = (f'<img src="data:image/png;base64,{pr.chart_year_b64}" alt="Year trend"'
+               f' style="width:100%;border-radius:4px;border:1px solid #3c3836;display:block;margin:16px 0 0">')
+        chart_year_tag = _maybe_link(img) if source_url else img
+
     chart_party_tag = f'<img src="data:image/png;base64,{pr.chart_party_b64}" alt="Party breakdown">' if pr.chart_party_b64 else ""
     chart_gov_tag   = f'<img src="data:image/png;base64,{pr.chart_gov_b64}" alt="Gov/Opp">'    if pr.chart_gov_b64   else ""
 
     citations_block = pr.citations_html if citations_on else ""
+
+    total_link = _maybe_link(f'{pr.total_historical:,} total since 1998', _link_style_blue)
+    view_results_link = (
+        f'<div style="margin-top:6px;font-size:13px">'
+        f'<a href="{source_url}" target="_blank" rel="noopener" style="{_link_style_blue}">View results at Hansard Search &#x2197;</a>'
+        f'</div>'
+    ) if source_url else ""
 
     return (
         f'<article class="phrase-block">'
@@ -2032,10 +2263,11 @@ def _phrase_block_html(pr: PhraseResult, citations_on: bool) -> str:
         f'<div style="flex:1">'
         f'<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">'
         f'<h2 style="margin:0;font-size:1.4em;color:#ebdbb2">Search term: '
-        f'<em style="color:#fabd2f">"{pr.phrase}"</em></h2>'
+        f'{_maybe_link(f"<em style=\"color:#fabd2f\">&#8220;{pr.phrase}&#8221;</em>")}</h2>'
         f'</div>'
+        f'{view_results_link}'
         f'<div style="margin-top:4px;font-size:14px;color:#928374">'
-        f'{pr.week_count} mentions this week · {pr.total_historical:,} total since 1998'
+        f'{pr.week_count} mentions this week · {total_link}'
         f'</div>'
         f'</div>'
         f'</div>'
@@ -2076,6 +2308,8 @@ def build_newsletter_html(
     )
 
     phrase_display = result.phrase.title() if result.phrase else ""
+    from urllib.parse import quote_plus as _qp
+    source_url = f"https://hansardsearch.com.au/?q={_qp(result.phrase)}" if result.phrase else ""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -2089,6 +2323,7 @@ def build_newsletter_html(
 <header>
   <h1>Hansard Weekly Digest</h1>
   <div style="font-size:18px;color:#ebdbb2;margin-top:6px;">Topic: <em style="color:#fabd2f">{phrase_display}</em></div>
+  <div style="margin-top:6px"><a href="{source_url}" target="_blank" rel="noopener" style="font-size:13px;color:#83a598;text-decoration:none">View source material at Hansard Search &#x2197;</a></div>
   <div class="meta">Sitting Week {week_label} &nbsp;·&nbsp; Issue {issue_n} &nbsp;·&nbsp; Generated {generated_at}</div>
 </header>
 <div class="container">
@@ -2388,7 +2623,7 @@ def main() -> None:
         sitting_days=sitting_days,
         citations_on=args.citations,
     )
-    html = inject_citation_popups(html)
+    html = inject_citation_popups(html, phrase=result.phrase)
     html_path = out_dir / "newsletter.html"
     html_path.write_text(html, encoding="utf-8")
     print(f"  Written: {html_path}")

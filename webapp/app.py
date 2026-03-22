@@ -333,6 +333,26 @@ def _build_turn_hash_index():
 _build_turn_hash_index()
 _ROWID_TO_HASH: dict[int, str] = {v: k for k, v in _TURN_HASH_INDEX.items()}
 
+# ── Day hash index (for /d/<hash> day permalinks) ───────────────────────────
+_DAY_HASH_INDEX: dict[str, tuple[str, str]] = {}  # hash -> (chamber, date)
+_DAY_TO_HASH:   dict[tuple[str, str], str]  = {}  # (chamber, date) -> hash
+
+def _build_day_hash_index() -> None:
+    import hashlib as _hl
+    global _DAY_HASH_INDEX, _DAY_TO_HASH
+    cur = _FTS_CONN.execute("SELECT DISTINCT chamber, date FROM speeches")
+    idx, rev = {}, {}
+    for ch, dt in cur:
+        raw = f"{(ch or '').lower()}|{dt}"
+        h = _hl.sha256(raw.encode()).hexdigest()[:12]
+        idx[h] = (ch, dt)
+        rev[(ch, dt)] = h
+    _DAY_HASH_INDEX = idx
+    _DAY_TO_HASH    = rev
+    print(f"  Day hash index:  {len(_DAY_HASH_INDEX):,} entries")
+
+_build_day_hash_index()
+
 import threading as _threading
 _SCAN_SEMAPHORE  = _threading.Semaphore(1)  # serialise heavy scans on single-core VPS
 
@@ -797,7 +817,108 @@ def turn_page(turn_hash: str):
     return resp
 
 
+@app.route("/d/<day_hash>")
+def day_page(day_hash: str):
+    from werkzeug.exceptions import abort
+    pair = _DAY_HASH_INDEX.get(day_hash)
+    if pair is None:
+        abort(404)
+    chamber, date_str = pair
+    rows = _FTS_CONN.execute(
+        'SELECT name, party, state, electorate, "order", time_stamp, question, answer, interject, body '
+        'FROM speeches WHERE chamber=? AND date=? ORDER BY "order"',
+        (chamber, date_str)
+    ).fetchall()
+    if not rows:
+        abort(404)
+    try:
+        date_fmt = datetime.strptime(date_str, "%Y-%m-%d").strftime("%-d %B %Y")
+    except (ValueError, TypeError):
+        date_fmt = date_str or ""
+    ch_label = _CHAMBER_LABELS.get((chamber or "").lower(), chamber or "Parliament")
+    ch_cls   = (chamber or "").lower()
+    ch_param = "senate" if ch_cls == "senate" else "house"
+    search_url = f"/?ch={ch_param}&dr={date_str},{date_str}"
+
+    def _flag(val, label, cls):
+        return f'<span class="flag-badge {cls}">{label}</span>' if val else ""
+
+    speeches_html = ""
+    for name, party, state, electorate, order, time_stamp, question, answer, interject, body in rows:
+        ts = (time_stamp or "")[:5]
+        ts_html = f'<span class="turn-time">{ts}</span>' if ts else ""
+        meta = f'<strong class="turn-name">{name or "—"}</strong>'
+        if party:
+            meta += f' <span class="turn-party">({party})</span>'
+        loc = state or electorate or ""
+        if loc:
+            meta += f' <span class="turn-loc">{loc}</span>'
+        flags = _flag(question, "Q", "flag-q") + _flag(answer, "A", "flag-a") + _flag(interject, "I", "flag-i")
+        speeches_html += (
+            f'<div class="ctx-speech">'
+            f'<div class="ctx-speech-meta">{meta}{flags}{ts_html}</div>'
+            f'<div class="ctx-speech-body">{body or ""}</div>'
+            f'</div>'
+        )
+
+    extra_css = """
+.ctx-speech{padding:14px 0;border-bottom:1px solid #3c3836}
+.ctx-speech:last-child{border-bottom:none}
+.ctx-speech-meta{font-size:13px;color:#928374;margin-bottom:6px;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px}
+.turn-name{color:#ebdbb2;font-weight:700}
+.turn-party{color:#928374}
+.turn-loc{color:#928374}
+.turn-time{color:#665c54;font-size:12px;margin-left:auto}
+.flag-badge{display:inline-block;padding:1px 5px;border-radius:3px;font-size:11px;font-weight:700;line-height:1.4}
+.flag-q{background:#458588;color:#fff}.flag-a{background:#d79921;color:#282828}.flag-i{background:#504945;color:#ebdbb2}
+.ctx-speech-body{line-height:1.75;white-space:pre-wrap;font-size:15px}
+.day-header{margin-bottom:28px;padding-bottom:16px;border-bottom:1px solid #504945}
+"""
+    html = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{ch_label} — {date_fmt} — Hansard</title>
+<style>{_TURN_PAGE_STYLE}{extra_css}</style>
+</head><body><div class="container">
+<a class="back" href="{search_url}">View this day on Hansard Search ↗</a>
+<div class="day-header">
+  <div class="meta">
+    <span class="chamber-badge {ch_cls}">{ch_label}</span>
+    <span style="font-size:18px;font-weight:700;color:#ebdbb2">{date_fmt}</span>
+  </div>
+  <div style="margin-top:6px;font-size:13px;color:#665c54">{len(rows):,} speech turns</div>
+</div>
+{speeches_html}
+</div></body></html>"""
+    resp = Response(html, mimetype="text/html")
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
+
+
 _CITATION_REPORTS_PATH = Path(__file__).parent / "citation_reports.jsonl"
+
+
+@app.route("/api/newsletters")
+def list_newsletters():
+    if not session.get("admin"):
+        return jsonify({"error": "forbidden"}), 403
+    items = []
+    if _NEWSLETTERS_DIR.exists():
+        for issue_dir in sorted(_NEWSLETTERS_DIR.iterdir(), reverse=True):
+            if not issue_dir.is_dir():
+                continue
+            html_file = issue_dir / "newsletter.html"
+            phrase_file = issue_dir / "phrase.txt"
+            if not html_file.exists():
+                continue
+            phrase = phrase_file.read_text(encoding="utf-8").strip() if phrase_file.exists() else ""
+            slug = _phrase_to_slug(phrase) if phrase else ""
+            items.append({
+                "issue": issue_dir.name,
+                "phrase": phrase,
+                "url": f"/newsletters/{slug}" if slug else None,
+            })
+    return jsonify(items)
 
 
 @app.route("/api/citation-feedback-log", methods=["GET", "DELETE"])
@@ -859,6 +980,30 @@ def citation_feedback():
     with _CITATION_REPORTS_PATH.open("a") as f:
         f.write(json.dumps(entry) + "\n")
     resp = jsonify({"ok": True})
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
+
+
+@app.route("/api/citation-feedback-counts")
+def citation_feedback_counts():
+    turn_hash = request.args.get("turn_hash", "")
+    good = bad = 0
+    if turn_hash and _CITATION_REPORTS_PATH.exists():
+        with _CITATION_REPORTS_PATH.open() as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("turn_hash") == turn_hash:
+                        if entry.get("feedback") == "good":
+                            good += 1
+                        else:
+                            bad += 1
+                except json.JSONDecodeError:
+                    pass
+    resp = jsonify({"good": good, "bad": bad})
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
 
@@ -1377,6 +1522,7 @@ def search():
             "body_preview": body_preview,
             "matched_terms": matched_terms,
             "turn_hash": _ROWID_TO_HASH.get(int(row.get("_rowid") or 0), ""),
+            "day_hash":  _DAY_TO_HASH.get((ch, dt), ""),
         })
 
     _t4 = time.perf_counter()
@@ -1419,6 +1565,66 @@ def search():
     return Response(_response_data, status=200, mimetype="application/json")
 
 
+@app.route("/api/find_turn_page", methods=["POST"])
+def find_turn_page():
+    """Given a search expression + turn_hash, return the page the turn appears on.
+
+    Accepts the same payload as /api/search plus a `turn_hash` field.  Runs the
+    search, sorts identically, finds the turn's position and returns the page number
+    in a single server-side call — no client-side page scanning needed.
+    """
+    body          = request.get_json(force=True) or {}
+    expression    = body.get("expression", "")
+    turn_hash     = body.get("turn_hash", "")
+    chamber_req   = body.get("chamber", "both")
+    page_size     = max(1, int(body.get("page_size", 20)))
+    sort_col      = body.get("sort_col", "date")
+    sort_dir      = body.get("sort_dir", "desc")
+    filters       = body.get("filters") or {}
+
+    target_rowid = _TURN_HASH_INDEX.get(turn_hash)
+    if target_rowid is None:
+        return jsonify({"found": False})
+
+    try:
+        tree = parse_expression(expression)
+    except Exception:
+        return jsonify({"found": False})
+
+    match_sets = _fts5_search(tree)
+    ascending  = (sort_dir == "asc")
+
+    if chamber_req == "senate":
+        matched = _SENATE[_SENATE["_rowid"].isin(match_sets["senate"])].copy()
+    elif chamber_req == "house":
+        matched = _HOUSE[_HOUSE["_rowid"].isin(match_sets["house"])].copy()
+    else:
+        s = _SENATE[_SENATE["_rowid"].isin(match_sets["senate"])].copy()
+        h = _HOUSE[_HOUSE["_rowid"].isin(match_sets["house"])].copy()
+        matched = pd.concat([s, h], ignore_index=True)
+
+    if filters:
+        matched = _apply_filters(matched, filters)
+
+    matched   = _sort_df(matched, sort_col, ascending)
+    rowid_list = matched["_rowid"].tolist()
+
+    try:
+        pos = rowid_list.index(target_rowid)
+    except ValueError:
+        return jsonify({"found": False})
+
+    page      = (pos // page_size) + 1
+    row       = matched.iloc[pos]
+    ch        = _safe_str(row.get("chamber", ""))
+    dt        = _safe_str(row.get("date", ""))
+    order_val = _safe_str(row.get("order", ""))
+    match_id  = f"{ch}-{dt}-{order_val}"
+
+    return jsonify({"found": True, "page": page, "match_id": match_id,
+                    "chamber": ch, "date": dt})
+
+
 @app.route("/api/day_context", methods=["POST"])
 def day_context():
     try:
@@ -1457,7 +1663,8 @@ def day_context():
                 "time_est":            bool(row.get("time_est", False)),
             })
 
-        return jsonify({"date": date_str, "chamber": chamber, "speeches": speeches})
+        day_hash = _DAY_TO_HASH.get((chamber, date_str), "")
+        return jsonify({"date": date_str, "chamber": chamber, "speeches": speeches, "day_hash": day_hash})
     except Exception as e:
         app.logger.exception("day_context error")
         return jsonify({"error": "Failed to load day context", "detail": str(e)}), 500
@@ -1509,6 +1716,9 @@ def suggest_aliases():
                 "Given a search phrase, return alternative phrasings, abbreviations, acronyms, and synonyms "
                 "that might appear in parliamentary speech. Focus on terms actually used in Australian political "
                 "and parliamentary language. "
+                "Ordering rule: place plural and singular variants of the search phrase FIRST in the array, "
+                "before any other suggestions. For example, if the search phrase is 'subsidy', put 'subsidies' "
+                "first; if it is 'refugees', put 'refugee' first. "
                 "Important: do NOT suggest phrases that contain the original search term as a substring — "
                 "for example, if the search phrase is 'climate change', do not suggest 'climate change policy' "
                 "or 'on climate change', because any speech containing those phrases already contains the "
