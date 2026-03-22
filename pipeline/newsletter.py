@@ -1095,6 +1095,16 @@ CITATION DENSITY:
 - Every sentence that names a specific politician, quotes a speaker, or references
   a specific debate, bill, year, or event drawn from the supplied data MUST end with
   an inline [N] citation.
+- Any sentence that characterises what the speech turns in a given year or period were
+  *about* — describing the topics, debates, legislation, or nature of the phrase's
+  parliamentary use during a specific time period — MUST also end with an inline [N]
+  citation citing 1–3 representative turns from that period. This applies even when no
+  individual politician is named.
+  REQUIRES citation: "In 2002 the organisation became entangled in battles over Regional
+  Forest Agreements" — cite a 2002 turn that places the phrase in that debate context.
+  REQUIRES citation: "In the early years references were largely administrative" — cite
+  1–2 early turns that exemplify the administrative character.
+  NO citation needed: "Total mentions reached 15 in 2006" — this is a pipeline statistic.
 - Where a claim is supported by multiple turns, cite up to 3 of the most salient —
   prefer turns that most directly and specifically support the claim over those that
   merely mention the phrase in passing. Do not cite indiscriminately; choose the
@@ -2008,7 +2018,13 @@ def correct_citations(
         "   'Senator Hodgins-May invoked it in a sharp attack on the gambling industry's "
         "political influence, arguing that the harm caused by gambling demanded urgent "
         "legislative action.' — this names a specific senator making a specific argument "
-        "and must be cited if a matching turn is in the provided list.\n\n"
+        "and must be cited if a matching turn is in the provided list.\n"
+        "   Also scan for sentences that characterise what the phrase was used for in a "
+        "specific year or period — e.g. 'In the early years, references were largely "
+        "administrative…' or 'A spike in 2006 spanned debates from marine parks to "
+        "fisheries reform…' — these make attributable claims about the content of specific "
+        "speech turns. If matching turns exist from that period, add 1–3 representative "
+        "citations even when no politician is named.\n\n"
         "4. STATISTICS — never cited:\n"
         "   Remove any [N] marker attached to a pipeline-derived statistic: "
         "total mention counts, year-by-year counts, rates per 10,000 turns, dataset "
