@@ -926,9 +926,9 @@ def citation_feedback_log():
     if not session.get("admin"):
         return jsonify({"error": "forbidden"}), 403
     if request.method == "DELETE":
-        ts = request.args.get("ts", "")
-        if not ts:
-            return jsonify({"error": "missing ts"}), 400
+        turn_hash = request.args.get("turn_hash", "")
+        if not turn_hash:
+            return jsonify({"error": "missing turn_hash"}), 400
         lines = []
         if _CITATION_REPORTS_PATH.exists():
             with _CITATION_REPORTS_PATH.open() as f:
@@ -938,14 +938,14 @@ def citation_feedback_log():
                         continue
                     try:
                         entry = json.loads(line)
-                        if entry.get("ts") != ts:
+                        if entry.get("turn_hash") != turn_hash:
                             lines.append(line)
                     except json.JSONDecodeError:
                         lines.append(line)
         with _CITATION_REPORTS_PATH.open("w") as f:
             f.write("\n".join(lines) + ("\n" if lines else ""))
         return jsonify({"ok": True})
-    # GET
+    # GET — return one aggregated row per turn_hash
     entries = []
     if _CITATION_REPORTS_PATH.exists():
         with _CITATION_REPORTS_PATH.open() as f:
@@ -956,8 +956,48 @@ def citation_feedback_log():
                         entries.append(json.loads(line))
                     except json.JSONDecodeError:
                         pass
-    entries.sort(key=lambda e: e.get("ts", ""), reverse=True)
-    return jsonify(entries)
+    agg: dict = {}
+    for entry in entries:
+        th = entry.get("turn_hash") or "_unknown"
+        if th not in agg:
+            agg[th] = {
+                "turn_hash": th,
+                "newsletter": entry.get("newsletter", ""),
+                "citation_num": entry.get("citation_num", ""),
+                "turn_url": entry.get("turn_url", ""),
+                "good": 0, "bad": 0,
+                "issues": {},
+                "first_seen": entry.get("ts", ""),
+                "last_seen": entry.get("ts", ""),
+            }
+        row = agg[th]
+        ts = entry.get("ts", "")
+        if ts and ts < row["first_seen"]:
+            row["first_seen"] = ts
+        if ts and ts > row["last_seen"]:
+            row["last_seen"] = ts
+        fb = entry.get("feedback")
+        if fb == "good":
+            row["good"] += 1
+        elif isinstance(fb, list):
+            row["bad"] += 1
+            for code in fb:
+                row["issues"][code] = row["issues"].get(code, 0) + 1
+    result = []
+    for row in sorted(agg.values(), key=lambda r: r["last_seen"], reverse=True):
+        top = sorted(row["issues"].items(), key=lambda x: x[1], reverse=True)[:3]
+        result.append({
+            "turn_hash": row["turn_hash"],
+            "newsletter": row["newsletter"],
+            "citation_num": row["citation_num"],
+            "turn_url": row["turn_url"],
+            "good": row["good"],
+            "bad": row["bad"],
+            "top_issues": top,
+            "first_seen": row["first_seen"],
+            "last_seen": row["last_seen"],
+        })
+    return jsonify(result)
 
 
 @app.route("/api/citation-feedback", methods=["POST", "OPTIONS"])

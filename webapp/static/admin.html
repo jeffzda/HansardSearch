@@ -109,6 +109,11 @@
   </div>
 
   <hr class="section-rule" />
+  <h2>Newsletters</h2>
+  <p style="color:var(--tn-comment);font-size:0.85rem">All generated newsletters, most recent first.</p>
+  <div id="newsletters-wrap"><span class="spinner">Loading…</span></div>
+
+  <hr class="section-rule" />
   <h2>Citation Feedback</h2>
   <p style="color:var(--tn-comment);font-size:0.85rem">Feedback submitted via newsletter citation popups. Most recent first.</p>
   <div id="feedback-wrap"><span class="spinner">Loading…</span></div>
@@ -323,12 +328,12 @@ loadAnalytics();
 
 async function deleteFeedback(btn) {
   const row = btn.closest('tr');
-  const ts = row.dataset.ts;
-  if (!ts) return;
+  const turnHash = row.dataset.turnHash;
+  if (!turnHash) return;
   btn.disabled = true;
   btn.textContent = '…';
   try {
-    const resp = await fetch('/api/citation-feedback-log?ts=' + encodeURIComponent(ts), { method: 'DELETE' });
+    const resp = await fetch('/api/citation-feedback-log?turn_hash=' + encodeURIComponent(turnHash), { method: 'DELETE' });
     if (!resp.ok) throw new Error(resp.status);
     row.remove();
   } catch (e) {
@@ -353,7 +358,6 @@ async function loadFeedback() {
     return;
   }
   const LABELS = {
-    good: '👍 Good citation',
     wrong_speaker: 'Wrong speaker',
     wrong_party: 'Wrong party',
     wrong_chamber: 'Wrong chamber',
@@ -364,28 +368,24 @@ async function loadFeedback() {
     misrepresents_speaker: 'Misrepresents speaker',
     out_of_context: 'Out of context',
   };
-  function fmtFeedback(fb) {
-    if (fb === 'good') return '<span style="color:var(--tn-green)">👍 Good citation</span>';
-    if (Array.isArray(fb)) return fb.map(k => escHtml(LABELS[k] || k)).join(', ');
-    return escHtml(String(fb));
-  }
-  let html = '<table class="query-table"><thead><tr><th>Time</th><th>Newsletter</th><th>#</th><th>Turn</th><th>Feedback</th><th></th></tr></thead><tbody>';
+  let html = '<table class="query-table"><thead><tr><th>Last seen</th><th>Newsletter</th><th>#</th><th>Turn</th><th>👍</th><th>👎</th><th>Top 3 issues</th><th></th></tr></thead><tbody>';
   for (const e of data) {
-    const ts = e.ts ? new Date(e.ts).toLocaleString('en-AU', {dateStyle:'short', timeStyle:'short'}) : '';
-    const hash = e.turn_hash || '';
-    const url = e.turn_url || '';
-    const turnCell = url
-      ? `<a href="${escHtml(url)}" target="_blank" rel="noopener" style="font-family:monospace;font-size:0.8rem">${escHtml(hash || url)}</a>`
-      : escHtml(hash);
-    const nl = e.newsletter || '';
-    const cnum = e.citation_num || '';
-    html += `<tr data-ts="${escHtml(e.ts||'')}">
-      <td style="white-space:nowrap;color:var(--tn-comment);font-size:0.8rem">${escHtml(ts)}</td>
-      <td style="font-size:0.8rem;color:var(--tn-fg-dim)">${escHtml(nl)}</td>
-      <td style="font-family:monospace;color:var(--tn-comment);text-align:center">${escHtml(cnum)}</td>
+    const lastSeen = e.last_seen ? new Date(e.last_seen).toLocaleString('en-AU', {dateStyle:'short', timeStyle:'short'}) : '';
+    const turnCell = e.turn_url
+      ? `<a href="${escHtml(e.turn_url)}" target="_blank" rel="noopener" style="font-family:monospace;font-size:0.8rem">${escHtml(e.turn_hash || e.turn_url)}</a>`
+      : escHtml(e.turn_hash || '');
+    const topIssues = (e.top_issues || [])
+      .map(([code, n]) => `${escHtml(LABELS[code] || code)} (${n})`)
+      .join('<br>');
+    html += `<tr data-turn-hash="${escHtml(e.turn_hash||'')}">
+      <td style="white-space:nowrap;color:var(--tn-comment);font-size:0.8rem">${escHtml(lastSeen)}</td>
+      <td style="font-size:0.8rem;color:var(--tn-fg-dim)">${escHtml(e.newsletter||'')}</td>
+      <td style="font-family:monospace;color:var(--tn-comment);text-align:center">${escHtml(String(e.citation_num||''))}</td>
       <td>${turnCell}</td>
-      <td>${fmtFeedback(e.feedback)}</td>
-      <td><button onclick="deleteFeedback(this)" style="background:none;border:none;color:var(--tn-comment);cursor:pointer;font-size:1rem;padding:0 4px" title="Delete">&times;</button></td>
+      <td style="text-align:center;color:var(--tn-green)">👍 ${e.good}</td>
+      <td style="text-align:center;color:var(--tn-red)">👎 ${e.bad}</td>
+      <td style="font-size:0.8rem;color:var(--tn-fg-dim);line-height:1.6">${topIssues||'—'}</td>
+      <td><button onclick="deleteFeedback(this)" style="background:none;border:none;color:var(--tn-comment);cursor:pointer;font-size:1rem;padding:0 4px" title="Delete all entries for this citation">&times;</button></td>
     </tr>`;
   }
   html += '</tbody></table>';
@@ -393,6 +393,38 @@ async function loadFeedback() {
 }
 
 loadFeedback();
+
+async function loadNewsletters() {
+  const wrap = document.getElementById('newsletters-wrap');
+  let data;
+  try {
+    const resp = await fetch('/api/newsletters');
+    if (!resp.ok) throw new Error(resp.status);
+    data = await resp.json();
+  } catch (e) {
+    wrap.innerHTML = '<span style="color:var(--tn-red)">Failed to load newsletters.</span>';
+    return;
+  }
+  if (!data.length) {
+    wrap.innerHTML = '<span style="color:var(--tn-comment);font-size:0.85rem">No newsletters yet.</span>';
+    return;
+  }
+  let html = '<table class="query-table"><thead><tr><th>Issue</th><th>Topic / Expression</th><th>Link</th></tr></thead><tbody>';
+  for (const n of data) {
+    const link = n.url
+      ? `<a href="${escHtml(n.url)}" target="_blank" rel="noopener">View ↗</a>`
+      : '<span style="color:var(--tn-comment)">—</span>';
+    html += `<tr>
+      <td style="font-family:monospace;font-size:0.8rem;white-space:nowrap">${escHtml(n.issue)}</td>
+      <td style="font-size:0.82rem;color:var(--tn-fg-dim)">${escHtml(n.phrase || '—')}</td>
+      <td style="white-space:nowrap">${link}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+loadNewsletters();
 </script>
 
 </body>
