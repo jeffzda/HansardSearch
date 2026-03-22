@@ -183,7 +183,26 @@ PRICING = {
     "claude-haiku-4-5-20251001": dict(input=1.00, output=5.00,  cache_write=1.25,  cache_read=0.10),
 }
 
-HAIKU_MODEL = "claude-haiku-4-5-20251001"
+HAIKU_MODEL   = "claude-haiku-4-5-20251001"
+DEFAULT_NARRATIVE_MODEL = "claude-sonnet-4-6"
+DEFAULT_CITATION_MODEL  = "claude-sonnet-4-6"
+
+
+def resolve_model(client, family: str, fallback: str) -> str:
+    """Return the latest model ID for a given family ('opus', 'sonnet', etc.).
+
+    Queries the Anthropic models API and picks the most recently created model
+    whose ID contains *family*. Falls back to *fallback* on any error.
+    """
+    try:
+        models = list(client.models.list())
+        candidates = [m for m in models if family.lower() in m.id.lower()]
+        if candidates:
+            # models.list() returns newest-first; take the first match
+            return candidates[0].id
+    except Exception:
+        pass
+    return fallback
 
 # Opus 4.6 and Sonnet 4.6 both have a 1M token context window.
 # Budget leaves ~100k headroom for system prompt, user-prompt stats block, and response.
@@ -2413,11 +2432,11 @@ def _process_chamber_phrase(
         )
         narrative_html, raw_response, usage = generate_phrase_narrative(
             client, phrase_system_prompt, user_prompt,
-            model=args.model,
+            model=args.narrative_model,
             no_cache=args.no_cache,
             citations=args.citations,
         )
-        cost = compute_cost(usage, args.model)
+        cost = compute_cost(usage, args.narrative_model)
         _log(log_path, {
             "event":      "narrative",
             "phrase":     phrase,
@@ -2429,20 +2448,19 @@ def _process_chamber_phrase(
         })
         print(f"    → narrative generated ({usage.get('output_tokens',0)} output tokens, ${cost:.3f})", flush=True)
 
-        # Second-pass citation correction — only when using Sonnet and citations are on.
-        # Haiku/Opus don't get the correction pass (cost vs benefit).
-        if args.citations and narrative_html and "sonnet" in args.model.lower():
+        # Second-pass citation correction — runs whenever citations are on.
+        if args.citations and narrative_html:
             if out_dir:
                 (out_dir / "narrative_pass1.html").write_text(narrative_html, encoding="utf-8")
-            print("    → citation-pass (Sonnet)…", flush=True)
+            print(f"    → citation-pass ({args.citation_model})…", flush=True)
             narrative_html, citation_summary, usage2 = correct_citations(
-                client, narrative_html, bodies, args.model, week_bodies=week_bodies,
+                client, narrative_html, bodies, args.citation_model, week_bodies=week_bodies,
             )
             if out_dir:
                 (out_dir / "narrative_pass2.html").write_text(narrative_html, encoding="utf-8")
                 if citation_summary:
                     (out_dir / "citation_pass_summary.txt").write_text(citation_summary, encoding="utf-8")
-            cost2 = compute_cost(usage2, args.model)
+            cost2 = compute_cost(usage2, args.citation_model)
             _log(log_path, {
                 "event":    "citation_pass",
                 "phrase":   phrase,
@@ -2490,7 +2508,12 @@ def main() -> None:
                     help="ISO week to analyse, e.g. 2026-W10. Default: auto-detect last sitting week.")
     ap.add_argument("--lookback",      type=int, default=12,
                     help="Weeks to look back when auto-detecting sitting week (default 12).")
-    ap.add_argument("--model",         default="claude-sonnet-4-6")
+    ap.add_argument("--narrative-model", default=None,
+                    help="Model for narrative generation (default: latest Sonnet). "
+                         "Pass a full model ID or a family name like 'opus' or 'sonnet'.")
+    ap.add_argument("--citation-model",  default=None,
+                    help="Model for citation correction pass (default: latest Sonnet). "
+                         "Pass a full model ID or a family name like 'opus' or 'sonnet'.")
     ap.add_argument("--dry-run",       action="store_true",
                     help="Skip API calls; use placeholder narratives.")
     ap.add_argument("--no-cache",      action="store_true",
@@ -2509,8 +2532,13 @@ def main() -> None:
                     help=f"Maximum historical speech turns passed to Claude (default: {MAX_BODIES_FOR_CLAUDE}).")
     args = ap.parse_args()
 
-    args.citations    = not args.no_citations
+    args.citations     = not args.no_citations
     args.max_citations = max(1, min(3, args.max_citations))
+    # Dry-run never reaches the client block; set safe defaults so the rest of
+    # the code can reference these attributes unconditionally.
+    if args.dry_run:
+        args.narrative_model = args.narrative_model or DEFAULT_NARRATIVE_MODEL
+        args.citation_model  = args.citation_model  or DEFAULT_CITATION_MODEL
 
     # ── 1. Resolve week ──────────────────────────────────────────────────────
     if args.week:
@@ -2555,6 +2583,26 @@ def main() -> None:
         import anthropic as ant
         client        = ant.Anthropic()
         system_prompt = build_system_prompt(citations=args.citations)
+
+        # Resolve model names: if caller passed a short family name like 'opus'
+        # or 'sonnet', look up the latest matching model via the API; otherwise
+        # treat the value as a literal model ID.  None → use defaults.
+        def _resolve(arg_val: Optional[str], family: str, fallback: str) -> str:
+            if arg_val is None:
+                return resolve_model(client, family, fallback)
+            # If it looks like a full model ID (contains '-'), use as-is
+            if "-" in arg_val:
+                return arg_val
+            return resolve_model(client, arg_val, fallback)
+
+        args.narrative_model = _resolve(
+            args.narrative_model, "sonnet", DEFAULT_NARRATIVE_MODEL
+        )
+        args.citation_model = _resolve(
+            args.citation_model, "sonnet", DEFAULT_CITATION_MODEL
+        )
+        print(f"Narrative model : {args.narrative_model}")
+        print(f"Citation model  : {args.citation_model}")
 
     result: Optional[PhraseResult] = None
 
