@@ -725,12 +725,30 @@ _PROCEDURAL_TOPIC_RE = re.compile(
 _TOPIC_LOOKUP: dict[str, list[str]] | None = None
 
 
+_TOPIC_LEG_RE = re.compile(
+    r"\bBILL\b|\bACT\b|\bSCHEME\b|\bINQUIRY\b|\bREVIEW\b|\bSTATEMENT\b"
+    r"|\bTREATY\b|\bPROTOCOL\b|\bAGREEMENT\b|\bPOLICY\b|\bSTRATEGY\b"
+    r"|\bFRAMEWORK\b|\bREGULATION\b|\bINSTRUMENT\b",
+    re.IGNORECASE,
+)
+
+
 def _load_topic_lookup() -> dict[str, list[str]]:
     """Load and cache the full debate-topic title→dates lookup.
 
     Returns dict mapping uppercase topic title → sorted list of ISO date strings.
     Procedural headings are stripped via _PROCEDURAL_TOPIC_RE. Both senate and
     house topics are merged. Result is cached at module level.
+
+    Includes:
+    - All level-0 titles (~6k) — pre-2012 these are specific bill/policy names;
+      post-2012 they collapse to generic containers (BILLS, COMMITTEES, etc.)
+      which the procedural filter removes.
+    - Level-1 titles that are standalone legislative names (~3.5k) — post-2012
+      the actual bill names sit at level 1 inside the generic containers. These
+      are identified by: no commas (not a cognate multi-bill title) AND containing
+      a legislative keyword (BILL, ACT, SCHEME, INQUIRY, STATEMENT, etc.).
+    Combined ~9.3k unique titles / ~122k tokens for the topic matching pass.
     """
     global _TOPIC_LOOKUP
     if _TOPIC_LOOKUP is not None:
@@ -742,7 +760,13 @@ def _load_topic_lookup() -> dict[str, list[str]]:
             continue
         try:
             df = pd.read_parquet(path, columns=["date", "level", "topic"])
-            frames.append(df[df["level"] == 0][["date", "topic"]].copy())
+            # Level 0: all (procedural filter applied below)
+            l0 = df[df["level"] == 0][["date", "topic"]].copy()
+            # Level 1: standalone legislative names only (no cognate concatenations)
+            l1 = df[df["level"] == 1][["date", "topic"]].copy()
+            l1 = l1[~l1["topic"].str.contains(",", na=False)]
+            l1 = l1[l1["topic"].apply(lambda t: bool(_TOPIC_LEG_RE.search(str(t))))]
+            frames.append(pd.concat([l0, l1], ignore_index=True))
         except Exception:
             continue
 
@@ -1364,7 +1388,7 @@ Rules:
         for iteration in range(15):  # safety cap — web search can need many rounds
             resp = client.messages.create(
                 model=model,
-                max_tokens=2048,
+                max_tokens=4096,
                 temperature=0,
                 tools=[WEB_SEARCH_TOOL],
                 messages=messages,
