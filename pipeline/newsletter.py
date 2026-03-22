@@ -717,30 +717,172 @@ _PROCEDURAL_TOPIC_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Module-level cache: uppercase title → sorted list of ISO date strings.
+# Built once on first call to _load_topic_lookup(), reused across all phrases.
+_TOPIC_LOOKUP: dict[str, list[str]] | None = None
 
-def _build_topic_calendar(phrase: str, matches_df: pd.DataFrame, max_rows: int = 60) -> str:
+
+def _load_topic_lookup() -> dict[str, list[str]]:
+    """Load and cache the full debate-topic title→dates lookup.
+
+    Returns dict mapping uppercase topic title → sorted list of ISO date strings.
+    Procedural headings are stripped via _PROCEDURAL_TOPIC_RE. Both senate and
+    house topics are merged. Result is cached at module level.
+    """
+    global _TOPIC_LOOKUP
+    if _TOPIC_LOOKUP is not None:
+        return _TOPIC_LOOKUP
+
+    frames: list[pd.DataFrame] = []
+    for path in [_SENATE_TOPICS_PATH, _HOUSE_TOPICS_PATH]:
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_parquet(path, columns=["date", "level", "topic"])
+            frames.append(df[df["level"] == 0][["date", "topic"]].copy())
+        except Exception:
+            continue
+
+    if not frames:
+        _TOPIC_LOOKUP = {}
+        return _TOPIC_LOOKUP
+
+    all_df = pd.concat(frames, ignore_index=True)
+    all_df["topic"] = all_df["topic"].str.strip().str.upper()
+    all_df = all_df.dropna(subset=["topic"]).query('topic != ""')
+    all_df = all_df[~all_df["topic"].apply(
+        lambda t: bool(_PROCEDURAL_TOPIC_RE.match(t))
+    )]
+
+    _TOPIC_LOOKUP = (
+        all_df.groupby("topic")["date"]
+        .apply(lambda s: sorted(s.astype(str).unique().tolist()))
+        .to_dict()
+    )
+    return _TOPIC_LOOKUP
+
+
+def topic_matching_pass(
+    phrase: str,
+    client,
+    model: str,
+) -> list[str]:
+    """Call Claude to identify debate topic titles directly relevant to phrase.
+
+    Sends the full list of unique substantive debate titles (procedural headings
+    already stripped via _PROCEDURAL_TOPIC_RE). Returns a list of exact matching
+    title strings (uppercase, verified against lookup). Returns [] on any failure
+    so researcher_pass falls back to the date-filtered calendar.
+    """
+    lookup = _load_topic_lookup()
+    if not lookup:
+        return []
+
+    title_list = "\n".join(sorted(lookup.keys()))
+
+    prompt = f"""You are an expert on Australian federal parliamentary debate (1998–present).
+
+The search phrase is: "{phrase}"
+
+Below is the complete list of substantive debate topic titles from the Australian Federal
+Parliament Hansard (1998–present). Procedural headings have already been removed.
+
+Your task: identify every topic title that is directly relevant to parliamentary debate
+about "{phrase}" — including related legislation, inquiries, policy frameworks,
+international agreements, and closely related policy areas.
+
+Return a JSON array of exact matching title strings copied verbatim from the list.
+Include only titles you are confident are relevant. Return JSON only — no prose, no
+markdown fences:
+["TITLE ONE", "TITLE TWO", ...]
+
+TOPIC TITLES:
+{title_list}
+"""
+
+    try:
+        resp = client.messages.create(
+            model=model,
+            max_tokens=4096,
+            temperature=0,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        inp = getattr(resp.usage, "input_tokens", 0)
+        out = getattr(resp.usage, "output_tokens", 0)
+        text = resp.content[0].text.strip()
+        # Strip markdown fences if model wraps output
+        if text.startswith("```"):
+            text = re.sub(r"^```[a-z]*\n?", "", text)
+            text = re.sub(r"\n?```$", "", text.rstrip())
+        matched = json.loads(text)
+        if not isinstance(matched, list):
+            return []
+        # Normalise to uppercase and verify each title exists in the lookup
+        result = [t.strip().upper() for t in matched if isinstance(t, str)]
+        result = [t for t in result if t in lookup]
+        print(
+            f"    [topic-match] {len(result)} relevant titles identified "
+            f"({inp:,} in / {out:,} out tokens)",
+            flush=True,
+        )
+        return result
+    except Exception as exc:
+        print(f"    [topic-match] failed ({exc}), skipping", flush=True)
+        return []
+
+
+def _build_topic_calendar(
+    phrase: str,
+    matches_df: pd.DataFrame,
+    matched_titles: list[str] | None = None,
+    max_rows: int = 60,
+) -> str:
     """Build a debate topic calendar for the researcher prompt.
 
-    For each sitting day in matches_df, loads the most prominent substantive debate
-    topic(s) from the assembled topics parquets and returns a formatted table of
-    (date | turns that day | topic title) sorted by turns-that-day descending.
+    When matched_titles is provided (from topic_matching_pass), uses the cached
+    lookup table to find ALL sitting days where those titles were formally debated —
+    not limited to dates that appear in matches_df. This surfaces landmark legislative
+    days even when no phrase-matching speech turn exists on that date.
 
-    Procedural headings (Questions Without Notice, Committees, etc.) are stripped
-    so the researcher only sees substantive topics. The researcher judges relevance
-    from the title — no keyword matching against the phrase is applied, so bills and
-    inquiries with their own formal names (e.g. CPRS, Clean Energy Act) are visible
-    even when the phrase doesn't appear in the title.
+    When matched_titles is None or empty, falls back to the original behaviour:
+    loads topics parquets and restricts to dates present in matches_df, showing up
+    to 5 substantive topics per day sorted by phrase-turn activity.
 
-    The "turns that day" column lets the researcher calibrate debate_date estimates.
+    The "turns that day" column always shows phrase-matching turn counts from
+    matches_df (0 when a legislative day has no phrase turns).
     """
     try:
-        # Per-day turn counts from matches_df (for calibration column)
+        # Per-day turn counts from matches_df (calibration column — always from corpus)
         dates_series = pd.to_datetime(matches_df["date"], errors="coerce").dt.date
         day_counts: dict = dates_series.value_counts().to_dict()
-        if not day_counts:
+        if not day_counts and not matched_titles:
             return "  (no dated turns in corpus)"
 
-        # Determine which chamber(s) are present
+        # ── Targeted path: use lookup table filtered to matched titles ──────────
+        if matched_titles:
+            lookup = _load_topic_lookup()
+            rows_targeted: list[tuple] = []   # (date_str, turns_that_day, title)
+            for title in matched_titles:
+                for date_str in lookup.get(title, []):
+                    try:
+                        dk = pd.to_datetime(date_str).date()
+                    except Exception:
+                        continue
+                    turns = day_counts.get(dk, 0)
+                    rows_targeted.append((date_str, turns, title))
+
+            if not rows_targeted:
+                return "  (no sitting days found for matched topic titles)"
+
+            # Sort: most phrase-turn activity first, then chronological
+            rows_targeted.sort(key=lambda r: (-r[1], r[0]))
+            lines = [
+                f"  {r[0]} | {r[1]:>4} turns | {r[2]}"
+                for r in rows_targeted[:max_rows]
+            ]
+            return "\n".join(lines) or "  (no topic calendar rows produced)"
+
+        # ── Fallback path: date-filtered from matches_df ─────────────────────────
         chambers = set(matches_df["chamber"].str.lower().unique()) if "chamber" in matches_df.columns else set()
 
         topic_frames: list[pd.DataFrame] = []
@@ -760,41 +902,70 @@ def _build_topic_calendar(phrase: str, matches_df: pd.DataFrame, max_rows: int =
             return "  (debate topics data not available)"
 
         topics_df = pd.concat(topic_frames, ignore_index=True)
-
-        # Strip procedural headings
         procedural_mask = topics_df["topic"].apply(
             lambda t: bool(_PROCEDURAL_TOPIC_RE.match(str(t))) if pd.notna(t) else False
         )
         topics_df = topics_df[~procedural_mask].copy()
-
-        # Convert date; restrict to dates that appear in matches_df
         topics_df["date_key"] = pd.to_datetime(topics_df["date"], errors="coerce").dt.date
         topics_df = topics_df[topics_df["date_key"].isin(day_counts)].copy()
 
         if topics_df.empty:
             return "  (no substantive debate topics found for corpus dates)"
 
-        # Attach turn counts; sort dates by activity then topics by sitting-day order
         topics_df["turns_that_day"] = topics_df["date_key"].map(day_counts).fillna(0).astype(int)
         topics_df = topics_df.sort_values(["turns_that_day", "date_key", "order"],
                                           ascending=[False, True, True])
-
-        # Keep up to 5 substantive topics per date (by sitting-day order).
-        # 5 covers the main bill even when it appears mid-agenda, without flooding
-        # the researcher with unrelated debates that happen to fall on the same day.
         topics_df["_rank"] = topics_df.groupby("date_key").cumcount()
         topics_df = topics_df[topics_df["_rank"] < 5]
         topics_df = topics_df.drop_duplicates(subset=["date_key", "topic"])
-        rows = topics_df.head(max_rows)
 
         lines = [
             f"  {row['date_key']} | {int(row['turns_that_day']):>4} turns | {row['topic']}"
-            for _, row in rows.iterrows()
+            for _, row in topics_df.head(max_rows).iterrows()
         ]
         return "\n".join(lines) or "  (no topic calendar rows produced)"
 
     except Exception as exc:
         return f"  (topic calendar unavailable: {exc})"
+
+
+def _build_speaker_topic_date_matrix(
+    matches_df: pd.DataFrame,
+    topic_matched_dates: set[str],
+    n_speakers: int = 15,
+) -> str:
+    """Build a compact speaker × topic-date activity matrix.
+
+    For the sitting days identified by topic_matching_pass, shows which top speakers
+    had phrase-matching turns on those specific dates. Format: one line per speaker,
+    nonzero date:count pairs only. ~2k tokens for 15 speakers × 200 dates.
+    """
+    if not topic_matched_dates:
+        return "  (no topic-matched dates)"
+
+    date_col = matches_df["date"].astype(str)
+    on_topic = matches_df[
+        date_col.isin(topic_matched_dates)
+        & (~matches_df["name_id"].astype(str).isin(["10000"]))
+    ]
+    if on_topic.empty:
+        return "  (no phrase-matching turns on topic-matched dates)"
+
+    top_speakers = (
+        on_topic.groupby("name").size()
+        .nlargest(n_speakers)
+        .index.tolist()
+    )
+
+    lines: list[str] = []
+    for speaker in top_speakers:
+        spk_df = on_topic[on_topic["name"] == speaker]
+        counts = spk_df.groupby(spk_df["date"].astype(str)).size()
+        pairs = " ".join(f"{d}:{v}" for d, v in sorted(counts.items()) if v > 0)
+        if pairs:
+            lines.append(f"  {speaker}: {pairs}")
+
+    return "\n".join(lines) or "  (no activity on topic-matched dates)"
 
 
 def researcher_pass(
@@ -803,6 +974,7 @@ def researcher_pass(
     client,
     model: str,
     max_turns: int,
+    matched_topic_titles: list[str] | None = None,
 ) -> Optional["ResearcherFilter"]:
     """Call Claude to produce a prioritised filter spec for a large corpus phrase.
 
@@ -905,11 +1077,22 @@ def researcher_pass(
     # Division turns total (for calibrating division_turns filter)
     division_turns_total = int(matches_df["div_flag"].astype(bool).sum())
 
-    # Debate topic calendar: find formally-titled debates relevant to this phrase.
-    # Uses keyword matching on topic titles — no speech-turn join required.
-    # Provides the researcher with the legislative timeline to correlate against
-    # its historical knowledge, and calibration data for debate_date filters.
-    topic_calendar_text = _build_topic_calendar(phrase, matches_df)
+    # Targeted topic calendar — uses matched titles from topic_matching_pass if available
+    # (all sitting days for those titles, not limited to dates in matches_df).
+    # Falls back to date-filtered calendar when matched_topic_titles is empty.
+    topic_calendar_text = _build_topic_calendar(
+        phrase, matches_df, matched_topic_titles, max_rows=300,
+    )
+
+    # Speaker × topic-date matrix: which key speakers were active on legislative debate days.
+    # Only built when topic_matching_pass produced results.
+    speaker_matrix_text = ""
+    if matched_topic_titles:
+        _lookup = _load_topic_lookup()
+        _topic_matched_dates: set[str] = set()
+        for _title in matched_topic_titles:
+            _topic_matched_dates.update(_lookup.get(_title, []))
+        speaker_matrix_text = _build_speaker_topic_date_matrix(matches_df, _topic_matched_dates)
 
     # Per-state per-year counts (Senate only; for calibrating state_year filter)
     state_year_text = "(no state data — House corpus or state column absent)"
@@ -933,6 +1116,39 @@ def researcher_pass(
                     yr_str = " ".join(f"{y}({c})" for y, c in sorted(active.items()))
                     state_lines.append(f"  {st}: {yr_str}")
             state_year_text = "\n".join(state_lines) or "  (no data)"
+
+    # ── Compute conditional prompt sections ──────────────────────────────────────
+    if matched_topic_titles:
+        _topic_cal_header = (
+            f'LEGISLATIVE DEBATE CALENDAR — all sitting days when parliament formally debated\n'
+            f'legislation directly related to "{phrase}". These dates were identified by\n'
+            f'matching relevant topic titles across both chambers and are NOT filtered to\n'
+            f'dates with phrase-matching turns. The "turns that day" column shows\n'
+            f'phrase-matching turns for that date (0 = legislation was debated but the\n'
+            f'phrase does not appear in any recorded speech turn that day).\n'
+            f'Use your knowledge of Australian political history to rank these dates by\n'
+            f'significance and use debate_date filters to target them directly.\n'
+            f'The "turns that day" column calibrates your estimated_turns values:'
+        )
+    else:
+        _topic_cal_header = (
+            'Substantive debate topics for the most active sitting days in this corpus\n'
+            '(date | turns that day | most prominent topic on that day).\n'
+            'Procedural headings (Questions Without Notice, Committees, etc.) have been removed.\n'
+            'Use these to correlate sitting days with your knowledge of key legislative events —\n'
+            'the topic titles use the formal bill/inquiry names, not the phrase itself, so you\n'
+            'will see entries like "CARBON POLLUTION REDUCTION SCHEME BILL" for a climate change\n'
+            'corpus. The "turns that day" column calibrates debate_date filter estimates:'
+        )
+
+    _speaker_matrix_section = ""
+    if speaker_matrix_text:
+        _speaker_matrix_section = (
+            f"\nKEY SPEAKERS ON LEGISLATIVE DEBATE DAYS\n"
+            f"(top 15 speakers by phrase-matching turns on topic-identified sitting days;\n"
+            f"format: speaker: date:turns date:turns ...)\n"
+            f"{speaker_matrix_text}"
+        )
 
     now = datetime.now()
     current_date_str = now.strftime("%-d %B %Y")   # e.g. "22 March 2026"
@@ -973,14 +1189,9 @@ Division turns (div_flag=1; on-record votes — use to calibrate division_turns 
 Per-state per-year activity (Senate only — use to calibrate state_year filter):
 {state_year_text}
 
-Substantive debate topics for the most active sitting days in this corpus
-(date | turns that day | most prominent topic on that day).
-Procedural headings (Questions Without Notice, Committees, etc.) have been removed.
-Use these to correlate sitting days with your knowledge of key legislative events —
-the topic titles use the formal bill/inquiry names, not the phrase itself, so you will
-see entries like "CARBON POLLUTION REDUCTION SCHEME BILL" for a climate change corpus.
-The "turns that day" column calibrates debate_date filter estimates:
+{_topic_cal_header}
 {topic_calendar_text}
+{_speaker_matrix_section}
 
 Top 40 speakers (name, party, total turns, [turn-type breakdown], per-year counts):
 {speakers_text}
@@ -1032,36 +1243,56 @@ INSTRUCTIONS:
    the issue long-term. Use this to identify which filters will capture each era, and to
    ensure your filter spans the full arc of the debate rather than a single party's peak.
 
-   DEBATE TOPIC CALENDAR — These are the formally-titled debate sections in Hansard that
-   are relevant to this phrase. Each row is a specific sitting date where parliament was
-   formally debating a topic related to this phrase. Use this as an anchor for your
-   historical knowledge: correlate the debate titles with key legislative events you know
-   about (second readings, committee reports, ministerial statements, votes), then use
-   debate_date filters to target the highest-signal sitting days directly. A sitting day
-   with many phrase matches and a directly relevant debate title is a high-confidence
-   signal that the writer will find substantive content there.
+   LEGISLATIVE DEBATE CALENDAR / DEBATE TOPIC CALENDAR — Each row is a specific sitting
+   day when parliament formally debated legislation or policy directly related to this
+   phrase. Use this as the anchor for your selection: correlate the debate titles with
+   key legislative events you know about (second readings, committee reports, ministerial
+   statements, critical votes), and use debate_date filters to target the most important
+   sitting days directly.
 
-4. Rank filter elements (speakers, year ranges, parties) in descending order of
-   historical/political significance — not by mention count.
-5. Using the per-year counts in the metadata, estimate how many turns each element would
-   add to the filter (OR logic: each new element adds turns not already captured by prior
-   elements in the list).
+   KEY SPEAKERS ON LEGISLATIVE DEBATE DAYS (when shown) — For each top speaker, the
+   dates and phrase-turn counts on topic-identified sitting days. Use this to identify
+   which speakers were consistently present at the legislative milestones, distinguishing
+   policy architects from ambient commenters. A speaker with high activity concentrated
+   on key legislative dates is a more important filter target than one with the same
+   total count spread across unrelated sittings.
+
+FILTER STRATEGY:
+Use `debate_date` as your PRIMARY filter type. Select the most politically significant
+sitting days from the legislative calendar above — prioritise second readings, critical
+Senate votes, committee report tabling days, and ministerial statements announcing policy.
+A single active debate day typically contributes 20–60 phrase-matching turns.
+
+For longitudinal narrative coverage — ensuring the story spans the full
+{first_year}–{last_year} period and includes voices important outside peak legislative
+moments — complement debate_date with `speaker_year` filters for key contributors.
+A minister's contributions over a 3-year term typically add 50–150 turns.
+
+Accumulate filter elements (debate_date first, then speaker_year, then others as needed)
+until estimated total reaches approximately {max_turns}. Stop when the target is met.
+
+4. Rank filter elements in descending order of historical/political significance — not
+   by mention count. debate_date elements for landmark sittings rank above broad
+   year_range or party filters.
+5. Using the per-year counts and the "turns that day" column, estimate how many turns
+   each element would add to the filter (OR logic: each new element adds turns not
+   already captured by prior elements in the list).
 6. Add elements in that order, accumulating estimated_turns, until the running total is
    within or close to {max_turns}.
 
 Return JSON only — NO prose, no markdown fences, no explanation outside the rationale field:
 {{
   "priority_filters": [
+    {{"type": "debate_date",      "value": ["YYYY-MM-DD", ...],                       "estimated_turns": <int>}},
+    {{"type": "speaker_year",     "value": {{"speaker": "<name>", "years": [<from>, <to>]}}, "estimated_turns": <int>}},
     {{"type": "speaker",          "value": "<partial name or surname>",               "estimated_turns": <int>}},
     {{"type": "year_range",       "value": [<from_year>, <to_year>],                  "estimated_turns": <int>}},
     {{"type": "party",            "value": "<PARTY_CODE>",                            "estimated_turns": <int>}},
-    {{"type": "speaker_year",     "value": {{"speaker": "<name>", "years": [<from>, <to>]}}, "estimated_turns": <int>}},
     {{"type": "speaker_type",     "value": {{"speaker": "<name>", "turn_type": "<type>"}},   "estimated_turns": <int>}},
     {{"type": "speaker_year_type","value": {{"speaker": "<name>", "years": [<from>, <to>], "turn_type": "<type>"}}, "estimated_turns": <int>}},
     {{"type": "gov_era",          "value": "<pm_surname>",                            "estimated_turns": <int>}},
     {{"type": "division_turns",   "value": true,                                      "estimated_turns": <int>}},
-    {{"type": "state_year",       "value": {{"state": "<STATE_CODE>", "years": [<from>, <to>]}}, "estimated_turns": <int>}},
-    {{"type": "debate_date",      "value": ["YYYY-MM-DD", ...],                       "estimated_turns": <int>}}
+    {{"type": "state_year",       "value": {{"state": "<STATE_CODE>", "years": [<from>, <to>]}}, "estimated_turns": <int>}}
   ],
   "rationale": "<one paragraph — which politicians and periods are most significant and
     why, what the parliamentary story of this phrase is, and why these filters capture
@@ -1379,11 +1610,16 @@ def select_bodies_for_claude(
     phrase: str,
     token_budget: int = EXCERPT_TOKEN_BUDGET,
     max_turns: int = MAX_BODIES_FOR_CLAUDE,
+    researcher_filtered: bool = False,
 ) -> list[dict]:
     """Select speech body texts to send to Claude within the token budget.
 
-    Case A — all fit and under MAX_BODIES_FOR_CLAUDE: return everything sorted by date.
+    Case A — fits within budget and turn cap: return everything sorted by date.
     Case B — exceeds budget or cap: proportional + speaker-stratified selection.
+
+    When researcher_filtered=True the turn cap for Case A is relaxed to 1.2×
+    max_turns, preventing the mechanical selection from discarding turns the
+    researcher deliberately chose. The token budget check is unchanged.
     """
     if matches_df.empty:
         return []
@@ -1416,7 +1652,8 @@ def select_bodies_for_claude(
     # Estimate total tokens
     total_tokens = sum(len(str(r.body)) // 4 for r in matches_df.itertuples())
 
-    if total_tokens <= token_budget and len(matches_df) <= max_turns:
+    turn_cap = int(max_turns * 1.2) if researcher_filtered else max_turns
+    if total_tokens <= token_budget and len(matches_df) <= turn_cap:
         # Case A — send everything
         rows = sorted(
             [row_to_dict(row, int(getattr(row, "year", 0) or 0) in spike_years)
@@ -3178,8 +3415,14 @@ def _process_chamber_phrase(
     # Full matches_df is retained for charts and spike detection.
     bodies_df: pd.DataFrame = matches_df
     rf: Optional[ResearcherFilter] = None
+    matched_topic_titles: list[str] = []
     if not args.dry_run and len(matches_df) > args.max_turns:
-        rf = researcher_pass(phrase, matches_df, client, args.narrative_model, max_turns=args.max_turns)
+        matched_topic_titles = topic_matching_pass(phrase, client, args.narrative_model)
+        rf = researcher_pass(
+            phrase, matches_df, client, args.narrative_model,
+            max_turns=args.max_turns,
+            matched_topic_titles=matched_topic_titles,
+        )
         if rf:
             print(f"    [researcher] rationale: {rf.rationale}", flush=True)
             bodies_df = apply_researcher_filter(matches_df, rf, args.max_turns)
@@ -3190,6 +3433,12 @@ def _process_chamber_phrase(
         print(f"\n{sep}", flush=True)
         print(f"PHRASE: {phrase}", flush=True)
         print(f"Corpus size: {len(matches_df):,} turns  |  Target: {args.max_turns}", flush=True)
+        if matched_topic_titles:
+            print(f"\nTOPIC MATCH ({len(matched_topic_titles)} relevant titles):", flush=True)
+            for t in sorted(matched_topic_titles)[:30]:
+                print(f"  {t}", flush=True)
+            if len(matched_topic_titles) > 30:
+                print(f"  ... and {len(matched_topic_titles) - 30} more", flush=True)
         if rf is None:
             print("Researcher: not triggered (corpus ≤ max_turns or API error)", flush=True)
         else:
@@ -3210,7 +3459,11 @@ def _process_chamber_phrase(
         print(sep, flush=True)
         return None  # skip narrative, citation pass, and HTML output
 
-    bodies    = select_bodies_for_claude(bodies_df, phrase, max_turns=args.max_turns)
+    bodies    = select_bodies_for_claude(
+        bodies_df, phrase,
+        max_turns=args.max_turns,
+        researcher_filtered=(rf is not None),
+    )
     first_men = get_first_mention(matches_df, phrase)
 
     # Pre-select week turns once — used consistently by narrative, citation pass, and renderer
